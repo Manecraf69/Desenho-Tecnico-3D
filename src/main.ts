@@ -1,6 +1,7 @@
 import './style.css';
 import { buildGeometry, buildHipRoofGeometry, createExampleViews, reconstruct, SIZE } from './geometry';
 import { ProjectionEditor } from './projection-editor';
+import { exportTechnicalPdf, projectFromPdf } from './pdf-export';
 import type { Mask, ProjectState, Tool, ViewName, ViewState } from './types';
 import { ModelViewer } from './viewer';
 
@@ -18,7 +19,9 @@ const redoButton = requiredElement<HTMLButtonElement>('redo');
 const fileInput = requiredElement<HTMLInputElement>('file-input');
 const showFill = requiredElement<HTMLInputElement>('show-fill');
 const showCoordinates = requiredElement<HTMLInputElement>('show-coordinates');
+const showProjectors = requiredElement<HTMLInputElement>('show-projectors');
 const modelStatus = requiredElement<HTMLElement>('model-status');
+const projectionGuides = requiredElement<SVGSVGElement>('projection-guides');
 
 const editors = {
   front: createEditor('front-view', SIZE.x, SIZE.z),
@@ -55,15 +58,19 @@ function bindInterface(): void {
   requiredElement('clear-all').addEventListener('click', clearAll);
   requiredElement('new-project').addEventListener('click', clearAll);
   requiredElement('save-project').addEventListener('click', exportProject);
+  requiredElement('export-pdf').addEventListener('click', exportPdf);
   requiredElement('open-project').addEventListener('click', () => fileInput.click());
   requiredElement('reset-iso').addEventListener('click', () => isoViewer.resetCamera());
   requiredElement('reset-camera').addEventListener('click', () => modelViewer.resetCamera());
 
   showFill.addEventListener('change', () => Object.values(editors).forEach((editor) => editor.setShowFill(showFill.checked)));
   showCoordinates.addEventListener('change', () => Object.values(editors).forEach((editor) => editor.setShowCoordinates(showCoordinates.checked)));
+  showProjectors.addEventListener('change', renderProjectionGuides);
 
   projectName.addEventListener('input', () => scheduleSave());
   fileInput.addEventListener('change', importProject);
+  window.addEventListener('resize', () => requestAnimationFrame(renderProjectionGuides));
+  new ResizeObserver(() => requestAnimationFrame(renderProjectionGuides)).observe(requiredElement('front-view'));
 
   window.addEventListener('keydown', (event) => {
     if (event.target instanceof HTMLInputElement && event.target !== fileInput) return;
@@ -137,6 +144,7 @@ function updateProject(): void {
 
   updateHistoryButtons();
   scheduleSave();
+  requestAnimationFrame(renderProjectionGuides);
 }
 
 function captureHistory(): void {
@@ -218,7 +226,9 @@ async function importProject(): Promise<void> {
   fileInput.value = '';
   if (!file) return;
   try {
-    const parsed = JSON.parse(await file.text()) as unknown;
+    const parsed = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+      ? await projectFromPdf(file)
+      : JSON.parse(await file.text()) as unknown;
     if (!isProjectState(parsed)) throw new Error('Formato inválido');
     captureHistory();
     applyProjectState(parsed);
@@ -226,6 +236,15 @@ async function importProject(): Promise<void> {
   } catch {
     toast('Não foi possível abrir este arquivo');
   }
+}
+
+function exportPdf(): void {
+  exportTechnicalPdf({
+    project: getProjectState(),
+    perspective: isoViewer.captureJpeg(),
+    showProjectors: showProjectors.checked,
+  });
+  toast('PDF técnico exportado com os dados editáveis');
 }
 
 function loadInitialProject(): void {
@@ -330,11 +349,74 @@ function isProjectState(value: unknown): value is ProjectState {
   if (!value || typeof value !== 'object') return false;
   const project = value as Partial<ProjectState>;
   if (project.version !== 1 || typeof project.name !== 'string' || !project.views) return false;
-  const expected: Record<ViewName, [number, number]> = { front: [SIZE.x, SIZE.z], top: [SIZE.x, SIZE.y], side: [SIZE.y, SIZE.z] };
-  return (Object.entries(expected) as Array<[ViewName, [number, number]]>).every(([name, [cols, rows]]) => {
+  return (['front', 'top', 'side'] as ViewName[]).every((name) => {
     const view = project.views?.[name] as ViewState | undefined;
-    return view?.cols === cols && view.rows === rows && Array.isArray(view.segments);
+    return Boolean(view && Number.isInteger(view.cols) && Number.isInteger(view.rows) && Array.isArray(view.segments));
   });
+}
+
+function renderProjectionGuides(): void {
+  projectionGuides.replaceChildren();
+  if (!showProjectors.checked) return;
+  const layout = projectionGuides.parentElement;
+  if (!layout) return;
+  const bounds = layout.getBoundingClientRect();
+  if (bounds.width === 0 || bounds.height === 0) return;
+  projectionGuides.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`);
+
+  const frontSvg = requiredElement<SVGSVGElement>('front-view');
+  const topSvg = requiredElement<SVGSVGElement>('top-view');
+  const sideSvg = requiredElement<SVGSVGElement>('side-view');
+  const frontCard = frontSvg.closest('.drawing-card')!.getBoundingClientRect();
+  const topCard = topSvg.closest('.drawing-card')!.getBoundingClientRect();
+  const sideCard = sideSvg.closest('.drawing-card')!.getBoundingClientRect();
+  const transferX = (frontCard.right + sideCard.left) / 2 - bounds.left;
+  const transferY = (frontCard.bottom + topCard.top) / 2 - bounds.top;
+  const states = { front: editors.front.getState(), top: editors.top.getState(), side: editors.side.getState() };
+
+  for (const x of commonCoordinates(states.front, 'x', states.top, 'x')) {
+    addGuide(svgToLayout(frontSvg, x, states.front.rows, bounds), svgToLayout(topSvg, x, 0, bounds));
+  }
+  for (const z of commonCoordinates(states.front, 'y', states.side, 'y')) {
+    addGuide(svgToLayout(frontSvg, states.front.cols, z, bounds), svgToLayout(sideSvg, 0, z, bounds));
+  }
+  for (const depth of commonCoordinates(states.top, 'y', states.side, 'x')) {
+    const start = svgToLayout(topSvg, states.top.cols, depth, bounds);
+    const end = svgToLayout(sideSvg, depth, states.side.rows, bounds);
+    if (!start || !end) continue;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('class', 'projection-guide transfer');
+    path.setAttribute('d', `M ${start.x} ${start.y} C ${transferX} ${start.y}, ${transferX} ${transferY}, ${transferX} ${transferY} C ${transferX} ${transferY}, ${end.x} ${transferY}, ${end.x} ${end.y}`);
+    projectionGuides.append(path);
+  }
+}
+
+function addGuide(start: { x: number; y: number } | null, end: { x: number; y: number } | null): void {
+  if (!start || !end) return;
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('class', 'projection-guide');
+  line.setAttribute('x1', String(start.x));
+  line.setAttribute('y1', String(start.y));
+  line.setAttribute('x2', String(end.x));
+  line.setAttribute('y2', String(end.y));
+  projectionGuides.append(line);
+}
+
+function svgToLayout(
+  svg: SVGSVGElement, x: number, y: number, layoutBounds: DOMRect,
+): { x: number; y: number } | null {
+  const matrix = svg.getScreenCTM();
+  if (!matrix) return null;
+  const point = new DOMPoint(x, y).matrixTransform(matrix);
+  return { x: point.x - layoutBounds.left, y: point.y - layoutBounds.top };
+}
+
+function commonCoordinates(a: ViewState, axisA: 'x' | 'y', b: ViewState, axisB: 'x' | 'y'): number[] {
+  const values = (view: ViewState, axis: 'x' | 'y') => new Set(view.segments.flatMap((segment) =>
+    axis === 'x' ? [segment.x1, segment.x2] : [segment.y1, segment.y2],
+  ));
+  const first = values(a, axisA);
+  return [...values(b, axisB)].filter((value) => first.has(value)).sort((x, y) => x - y);
 }
 
 function requiredElement<T extends Element = HTMLElement>(id: string): T {

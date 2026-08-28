@@ -31,8 +31,9 @@
           <span class="action-divider"></span>
           <button id="new-project" class="button button-quiet">Novo</button>
           <button id="open-project" class="button button-quiet">Abrir</button>
-          <button id="save-project" class="button button-primary">Salvar JSON</button>
-          <input id="file-input" type="file" accept="application/json,.json" hidden />
+          <button id="save-project" class="button button-quiet">Salvar JSON</button>
+          <button id="export-pdf" class="button button-primary">Exportar PDF</button>
+          <input id="file-input" type="file" accept="application/json,.json,application/pdf,.pdf" hidden />
         </nav>
       </header>
 
@@ -63,7 +64,12 @@
         </label>
         <label class="switch-row">
           <span>Coordenadas</span>
-          <input id="show-coordinates" type="checkbox" />
+          <input id="show-coordinates" type="checkbox" checked />
+          <i></i>
+        </label>
+        <label class="switch-row">
+          <span>Projetantes</span>
+          <input id="show-projectors" type="checkbox" />
           <i></i>
         </label>
 
@@ -86,10 +92,11 @@
         </section>
 
         <div class="drawing-layout">
+          <svg id="projection-guides" class="projection-guides" aria-hidden="true"></svg>
           <section class="drawing-card front-card" aria-labelledby="front-title">
             <header>
               <div><span class="view-code">VF</span><h2 id="front-title">Vista frontal</h2></div>
-              <span class="dimensions" id="front-dimensions">12 × 10</span>
+              <span class="dimensions" id="front-dimensions">10 × 10</span>
             </header>
             <div class="svg-wrap"><svg id="front-view" aria-label="Área de desenho da vista frontal"></svg></div>
             <footer><span>Eixo X</span><span>Altura Z</span></footer>
@@ -97,7 +104,7 @@
 
           <section class="drawing-card side-card" aria-labelledby="side-title">
             <header>
-              <div><span class="view-code">VL</span><h2 id="side-title">Vista lateral esquerda</h2></div>
+              <div><span class="view-code">VLE</span><h2 id="side-title">Vista lateral esquerda</h2></div>
               <span class="dimensions" id="side-dimensions">10 × 10</span>
             </header>
             <div class="svg-wrap"><svg id="side-view" aria-label="Área de desenho da vista lateral esquerda"></svg></div>
@@ -107,7 +114,7 @@
           <section class="drawing-card top-card" aria-labelledby="top-title">
             <header>
               <div><span class="view-code">VS</span><h2 id="top-title">Vista superior</h2></div>
-              <span class="dimensions" id="top-dimensions">12 × 10</span>
+              <span class="dimensions" id="top-dimensions">10 × 10</span>
             </header>
             <div class="svg-wrap"><svg id="top-view" aria-label="Área de desenho da vista superior"></svg></div>
             <footer><span>Eixo X</span><span>Profundidade Y</span></footer>

@@ -23,7 +23,7 @@ export class ProjectionEditor {
   private current: Point | null = null;
   private pointerId: number | null = null;
   private showFill = true;
-  private showCoordinates = false;
+  private showCoordinates = true;
   private mask: Mask;
 
   constructor(options: EditorOptions) {
@@ -46,7 +46,9 @@ export class ProjectionEditor {
 
   setState(state: ViewState, notify = false): void {
     this.segments = state.segments
-      .filter(isValidSegment)
+      .filter((segment) => isValidSegment(segment) &&
+        segment.x1 >= 0 && segment.x1 <= this.cols && segment.x2 >= 0 && segment.x2 <= this.cols &&
+        segment.y1 >= 0 && segment.y1 <= this.rows && segment.y2 >= 0 && segment.y2 <= this.rows)
       .map((segment) => ({ ...segment, id: segment.id || crypto.randomUUID() }));
     this.recompute();
     if (notify) this.onChange();

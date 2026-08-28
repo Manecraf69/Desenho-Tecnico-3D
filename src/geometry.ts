@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Mask, MeshStats, Occupancy, Segment, ViewName, ViewState } from './types';
 
-export const SIZE = { x: 12, y: 10, z: 10 } as const;
+export const SIZE = { x: 10, y: 10, z: 10 } as const;
 
 export function reconstruct(front: Mask, top: Mask, side: Mask): Occupancy {
   return Array.from({ length: SIZE.x }, (_, x) =>

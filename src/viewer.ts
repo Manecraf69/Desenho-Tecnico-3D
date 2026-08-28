@@ -77,13 +77,62 @@ export class ModelViewer {
     const distance = Math.max(this.size * 1.45, 13);
     const target = new THREE.Vector3(0, Math.max(this.size * 0.2, 1.6), 0);
     if (this.mode === 'isometric') {
-      this.camera.position.copy(target).add(new THREE.Vector3(distance, distance, distance));
+      // Quadrante usado na perspectiva técnica de referência: +X e -Z.
+      // A parte posterior recua à esquerda e a frontal avança à direita.
+      this.camera.position.copy(target).add(new THREE.Vector3(distance, distance, -distance));
     } else {
-      this.camera.position.copy(target).add(new THREE.Vector3(distance * 1.15, distance * 0.85, distance * 1.25));
+      this.camera.position.copy(target).add(new THREE.Vector3(distance * 1.15, distance * 0.85, -distance * 1.25));
     }
     this.controls.target.copy(target);
     this.controls.update();
     this.resize();
+  }
+
+  captureJpeg(quality = 0.92): { bytes: Uint8Array; width: number; height: number } {
+    const previousBackground = this.scene.background;
+    const draftingGrid = this.scene.getObjectByName('drafting-grid');
+    const previousGridVisibility = draftingGrid?.visible;
+    const previousPosition = this.camera.position.clone();
+    const previousTarget = this.controls.target.clone();
+    const previousZoom = this.camera instanceof THREE.OrthographicCamera ? this.camera.zoom : 1;
+    this.scene.background = new THREE.Color(0xf9fbfc);
+    if (draftingGrid) draftingGrid.visible = false;
+
+    const bounds = new THREE.Box3().setFromObject(this.object);
+    if (!bounds.isEmpty()) {
+      const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+      const direction = previousPosition.clone().sub(previousTarget).normalize();
+      const distance = Math.max(previousPosition.distanceTo(previousTarget), sphere.radius * 3);
+      this.controls.target.copy(sphere.center);
+      this.camera.position.copy(sphere.center).addScaledVector(direction, distance);
+      if (this.camera instanceof THREE.OrthographicCamera) {
+        // A esfera envolvente garante margem em qualquer orientação isométrica.
+        this.camera.zoom = THREE.MathUtils.clamp(this.camera.top / Math.max(sphere.radius * 1.22, 0.1), 0.1, 10);
+        this.camera.updateProjectionMatrix();
+      }
+      this.controls.update();
+    } else if (this.camera instanceof THREE.OrthographicCamera) {
+      this.camera.zoom = previousZoom;
+      this.camera.updateProjectionMatrix();
+    }
+    this.renderer.render(this.scene, this.camera);
+    const dataUrl = this.canvas.toDataURL('image/jpeg', quality);
+    this.scene.background = previousBackground;
+    if (draftingGrid && previousGridVisibility !== undefined) draftingGrid.visible = previousGridVisibility;
+    if (this.camera instanceof THREE.OrthographicCamera) {
+      this.camera.zoom = previousZoom;
+      this.camera.updateProjectionMatrix();
+    }
+    this.camera.position.copy(previousPosition);
+    this.controls.target.copy(previousTarget);
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+    const binary = atob(dataUrl.split(',')[1]);
+    return {
+      bytes: Uint8Array.from(binary, (character) => character.charCodeAt(0)),
+      width: this.canvas.width,
+      height: this.canvas.height,
+    };
   }
 
   private setupScene(): void {
@@ -95,6 +144,7 @@ export class ModelViewer {
     this.scene.add(key);
 
     const grid = new THREE.GridHelper(26, 26, 0xaac0ca, 0xd8e2e6);
+    grid.name = 'drafting-grid';
     grid.position.y = -0.02;
     const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material];
     gridMaterials.forEach((material) => { material.transparent = true; material.opacity = this.mode === 'isometric' ? 0.38 : 0.25; });

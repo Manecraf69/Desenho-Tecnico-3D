@@ -49,3 +49,11 @@ O protótipo trabalha com peças alinhadas aos eixos X, Y e Z, contornos ortogon
 O sistema também reconhece telhados de quatro águas proporcionais: retângulo, cumeeira e quatro espigões na vista superior; trapézio na frontal; e triângulo na lateral. Nesse caso, são produzidos quatro planos inclinados contínuos em vez de células voxelizadas.
 
 Os projetos são salvos automaticamente no navegador. Também podem ser exportados e importados como arquivos `.traco3d.json`.
+
+## PDF técnico editável
+
+O botão **Exportar PDF** cria uma folha A4 paisagem com as vistas frontal, lateral esquerda e superior em primeiro diedro, além da perspectiva isométrica. O PDF incorpora os dados completos do editor em seus metadados.
+
+Para continuar editando, use **Abrir** e selecione o próprio arquivo `.pdf`. PDFs comuns, sem dados Traço 3D incorporados, são recusados sem alterar o projeto atual.
+
+As três vistas usam grid 10×10 e mostram coordenadas inicialmente. A opção **Projetantes** ativa linhas de correspondência entre frontal/superior e frontal/lateral, mais curvas de transferência entre superior/lateral. Quando estiver ativa, essa camada também aparece no PDF.
