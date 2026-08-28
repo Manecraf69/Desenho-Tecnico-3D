@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0e3654" />
+    <meta
+      name="description"
+      content="Editor de projeções ortográficas em primeiro diedro com reconstrução 3D instantânea."
+    />
+    <title>Traço 3D — Desenho Técnico</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Traço 3D — início">
+          <span class="brand-mark" aria-hidden="true">
+            <i></i><i></i><i></i>
+          </span>
+          <span><strong>TRAÇO</strong><b>3D</b></span>
+        </a>
+
+        <div class="document-title">
+          <span>PROJETO</span>
+          <input id="project-name" value="Peça sem título" aria-label="Nome do projeto" />
+        </div>
+
+        <nav class="top-actions" aria-label="Ações do projeto">
+          <button id="undo" class="icon-button" title="Desfazer (Ctrl+Z)" aria-label="Desfazer">↶</button>
+          <button id="redo" class="icon-button" title="Refazer (Ctrl+Y)" aria-label="Refazer">↷</button>
+          <span class="action-divider"></span>
+          <button id="new-project" class="button button-quiet">Novo</button>
+          <button id="open-project" class="button button-quiet">Abrir</button>
+          <button id="save-project" class="button button-primary">Salvar JSON</button>
+          <input id="file-input" type="file" accept="application/json,.json" hidden />
+        </nav>
+      </header>
+
+      <aside class="toolrail" aria-label="Ferramentas de desenho">
+        <p class="rail-label">LINHAS</p>
+        <button class="tool active" data-tool="visible" aria-pressed="true">
+          <span class="line-swatch line-solid"></span>
+          <span>Visível</span>
+          <kbd>V</kbd>
+        </button>
+        <button class="tool" data-tool="hidden" aria-pressed="false">
+          <span class="line-swatch line-dashed"></span>
+          <span>Oculta</span>
+          <kbd>O</kbd>
+        </button>
+        <button class="tool" data-tool="erase" aria-pressed="false">
+          <span class="erase-icon" aria-hidden="true">⌫</span>
+          <span>Apagar</span>
+          <kbd>E</kbd>
+        </button>
+
+        <div class="rail-separator"></div>
+        <p class="rail-label">EXIBIÇÃO</p>
+        <label class="switch-row">
+          <span>Preenchimento</span>
+          <input id="show-fill" type="checkbox" checked />
+          <i></i>
+        </label>
+        <label class="switch-row">
+          <span>Coordenadas</span>
+          <input id="show-coordinates" type="checkbox" />
+          <i></i>
+        </label>
+
+        <div class="rail-tip">
+          <strong>Como desenhar</strong>
+          <p>Arraste entre pontos do grid, inclusive na diagonal. Feche um contorno visível para criar matéria.</p>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <section class="workspace-heading">
+          <div>
+            <span class="eyebrow">PRIMEIRO DIEDRO</span>
+            <h1>Projeções ortográficas</h1>
+          </div>
+          <div class="heading-tools">
+            <button id="load-example" class="button button-outline">Carregar exemplo</button>
+            <button id="clear-all" class="button button-quiet danger">Limpar vistas</button>
+          </div>
+        </section>
+
+        <div class="drawing-layout">
+          <section class="drawing-card front-card" aria-labelledby="front-title">
+            <header>
+              <div><span class="view-code">VF</span><h2 id="front-title">Vista frontal</h2></div>
+              <span class="dimensions" id="front-dimensions">12 × 10</span>
+            </header>
+            <div class="svg-wrap"><svg id="front-view" aria-label="Área de desenho da vista frontal"></svg></div>
+            <footer><span>Eixo X</span><span>Altura Z</span></footer>
+          </section>
+
+          <section class="drawing-card side-card" aria-labelledby="side-title">
+            <header>
+              <div><span class="view-code">VL</span><h2 id="side-title">Vista lateral esquerda</h2></div>
+              <span class="dimensions" id="side-dimensions">10 × 10</span>
+            </header>
+            <div class="svg-wrap"><svg id="side-view" aria-label="Área de desenho da vista lateral esquerda"></svg></div>
+            <footer><span>Profundidade Y</span><span>Altura Z</span></footer>
+          </section>
+
+          <section class="drawing-card top-card" aria-labelledby="top-title">
+            <header>
+              <div><span class="view-code">VS</span><h2 id="top-title">Vista superior</h2></div>
+              <span class="dimensions" id="top-dimensions">12 × 10</span>
+            </header>
+            <div class="svg-wrap"><svg id="top-view" aria-label="Área de desenho da vista superior"></svg></div>
+            <footer><span>Eixo X</span><span>Profundidade Y</span></footer>
+          </section>
+
+          <aside class="projection-note">
+            <span class="projection-symbol" aria-hidden="true"><i></i><b></b></span>
+            <div><strong>1º DIEDRO</strong><small>Vista superior abaixo da frontal</small></div>
+          </aside>
+        </div>
+
+        <section class="results-heading">
+          <div>
+            <span class="eyebrow">RECONSTRUÇÃO INSTANTÂNEA</span>
+            <h2>Modelo resultante</h2>
+          </div>
+          <div id="model-status" class="status waiting"><i></i><span>Complete as três vistas</span></div>
+        </section>
+
+        <div class="viewer-grid">
+          <section class="viewer-card" aria-labelledby="iso-title">
+            <header>
+              <div><span class="view-code amber">30°</span><h3 id="iso-title">Perspectiva isométrica</h3></div>
+              <button id="reset-iso" class="viewer-button">Reenquadrar</button>
+            </header>
+            <div id="iso-viewer" class="viewer"><canvas aria-label="Perspectiva isométrica fixa do modelo"></canvas></div>
+            <footer><span><i class="legend-edge"></i>Arestas visíveis</span><span>Câmera ortográfica</span></footer>
+          </section>
+
+          <section class="viewer-card interactive" aria-labelledby="model-title">
+            <header>
+              <div><span class="view-code blue">3D</span><h3 id="model-title">Modelo interativo</h3></div>
+              <button id="reset-camera" class="viewer-button">Redefinir câmera</button>
+            </header>
+            <div id="model-viewer" class="viewer"><canvas aria-label="Modelo 3D girável com o mouse"></canvas>
+              <div class="mouse-hint"><span>↔</span> Arraste para girar · roda para zoom</div>
+            </div>
+            <footer><span id="voxel-count">0 células sólidas</span><span id="face-count">0 faces externas</span></footer>
+          </section>
+        </div>
+      </main>
+
+      <footer class="app-footer">
+        <span><i class="save-dot"></i><b id="save-state">Salvo localmente</b></span>
+        <span>Grid: 1 unidade · medidas sem escala</span>
+        <span>Traço 3D · Protótipo ortogonal</span>
+      </footer>
+    </div>
+    <div id="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
