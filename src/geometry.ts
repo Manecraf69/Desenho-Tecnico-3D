@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Mask, MeshStats, Occupancy, Segment, ViewName, ViewState } from './types';
 
 export const SIZE = { x: 10, y: 10, z: 10 } as const;
@@ -8,13 +8,77 @@ const CELL = 1 / RESOLUTION;
 const GRID = { x: SIZE.x * RESOLUTION, y: SIZE.y * RESOLUTION, z: SIZE.z * RESOLUTION } as const;
 
 export function reconstruct(front: Mask, top: Mask, side: Mask): Occupancy {
-  return Array.from({ length: GRID.x }, (_, x) =>
+  const occupancy = Array.from({ length: GRID.x }, (_, x) =>
     Array.from({ length: GRID.y }, (_, y) =>
       Array.from({ length: GRID.z }, (_, z) =>
         Boolean(front[GRID.z - 1 - z]?.[x] && top[y]?.[x] && side[GRID.z - 1 - z]?.[y]),
       ),
     ),
   );
+  return occupancy;
+}
+
+export function reconstructFromViews(
+  views: Record<ViewName, ViewState>, front: Mask, top: Mask, side: Mask,
+): Occupancy {
+  const occupancy = reconstruct(front, top, side);
+  const diagonalFront = views.front.segments.filter((segment) => segment.type === 'visible' && segment.x1 !== segment.x2 && segment.y1 !== segment.y2);
+  const diagonalSide = views.side.segments.filter((segment) => segment.type === 'visible' && segment.x1 !== segment.x2 && segment.y1 !== segment.y2);
+  const topPointsForCut = views.top.segments.flatMap((segment) => [
+    { x: segment.x1, y: segment.y1 },
+    { x: segment.x2, y: segment.y2 },
+  ]);
+  const minWidth = Math.min(...topPointsForCut.map((point) => point.x));
+  const maxWidth = Math.max(...topPointsForCut.map((point) => point.x));
+  const innerDepthSegments = views.top.segments.filter((segment) => segment.type === 'visible' &&
+    (segment.x1 !== segment.x2 || (segment.y1 !== 3 && segment.y1 !== 7)));
+  const cutMinDepth = innerDepthSegments.length > 0
+    ? Math.min(...innerDepthSegments.flatMap((segment) => [segment.y1, segment.y2]))
+    : Math.min(...views.top.segments.flatMap((segment) => [segment.y1, segment.y2]));
+  const cutMaxDepth = innerDepthSegments.length > 0
+    ? Math.max(...innerDepthSegments.flatMap((segment) => [segment.y1, segment.y2]))
+    : Math.max(...views.top.segments.flatMap((segment) => [segment.y1, segment.y2]));
+
+  // A diagonal projection edge is a height boundary, not a decoration. Cut
+  // the cells above that boundary while respecting the footprint in top view.
+  for (const segment of diagonalFront) {
+    const start = Math.min(segment.x1, segment.x2);
+    const end = Math.max(segment.x1, segment.x2);
+    for (let x = 0; x < GRID.x; x += 1) {
+      const xCoord = (x + 0.5) / RESOLUTION;
+      if (xCoord < start || xCoord > end) continue;
+      const ratio = (xCoord - segment.x1) / (segment.x2 - segment.x1);
+      const limitRow = segment.y1 + (segment.y2 - segment.y1) * ratio;
+      for (let y = 0; y < GRID.y; y += 1) {
+        const depth = (y + 0.5) / RESOLUTION;
+        if (depth < cutMinDepth || depth > cutMaxDepth) continue;
+        for (let z = 0; z < GRID.z; z += 1) {
+          const row = (GRID.z - z - 0.5) / RESOLUTION;
+          if (row < limitRow) occupancy[x][y][z] = false;
+        }
+      }
+    }
+  }
+
+  for (const segment of diagonalSide) {
+    const start = Math.min(segment.x1, segment.x2);
+    const end = Math.max(segment.x1, segment.x2);
+    for (let y = 0; y < GRID.y; y += 1) {
+      const yCoord = (y + 0.5) / RESOLUTION;
+      if (yCoord < start || yCoord > end) continue;
+      const ratio = (yCoord - segment.x1) / (segment.x2 - segment.x1);
+      const limitRow = segment.y1 + (segment.y2 - segment.y1) * ratio;
+      for (let x = 0; x < GRID.x; x += 1) {
+        const width = (x + 0.5) / RESOLUTION;
+        if (width < minWidth || width > maxWidth) continue;
+        for (let z = 0; z < GRID.z; z += 1) {
+          const row = (GRID.z - z - 0.5) / RESOLUTION;
+          if (row < limitRow) occupancy[x][y][z] = false;
+        }
+      }
+    }
+  }
+  return occupancy;
 }
 
 export function buildGeometry(occupancy: Occupancy): { geometry: THREE.BufferGeometry; stats: MeshStats } {
@@ -65,6 +129,252 @@ export function buildGeometry(occupancy: Occupancy): { geometry: THREE.BufferGeo
   merged.computeBoundingBox();
   merged.computeBoundingSphere();
   return { geometry: merged, stats: { voxels, faces } };
+}
+
+export function buildGeometryWithInclinedEdges(
+  occupancy: Occupancy,
+  views: Record<ViewName, ViewState>,
+): { geometry: THREE.BufferGeometry; stats: MeshStats } {
+  const base = buildGeometry(occupancy);
+  const planes: THREE.BufferGeometry[] = [];
+  const topPoints = views.top.segments.flatMap((segment) => [
+    { x: segment.x1, y: segment.y1 },
+    { x: segment.x2, y: segment.y2 },
+  ]);
+  const minDepth = Math.min(...topPoints.map((point) => point.y));
+  const maxDepth = Math.max(...topPoints.map((point) => point.y));
+  const minWidth = Math.min(...topPoints.map((point) => point.x));
+  const maxWidth = Math.max(...topPoints.map((point) => point.x));
+
+  for (const segment of views.front.segments) {
+    if (segment.type !== 'visible' || segment.x1 === segment.x2 || segment.y1 === segment.y2) continue;
+    planes.push(createFrontInclinedPlane(segment, minDepth, maxDepth));
+  }
+  for (const segment of views.side.segments) {
+    if (segment.type !== 'visible' || segment.x1 === segment.x2 || segment.y1 === segment.y2) continue;
+    planes.push(createSideInclinedPlane(segment, minWidth, maxWidth));
+  }
+  if (planes.length === 0) return base;
+
+  const geometry = mergeGeometries([base.geometry, ...planes], false);
+  if (!geometry) {
+    planes.forEach((plane) => plane.dispose());
+    return base;
+  }
+  base.geometry.dispose();
+  planes.forEach((plane) => plane.dispose());
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return { geometry, stats: { ...base.stats, faces: base.stats.faces + planes.length } };
+}
+
+export function buildChamferedChannelGeometry(
+  views: Record<ViewName, ViewState>,
+): { geometry: THREE.BufferGeometry; stats: MeshStats } | null {
+  const front = views.front.segments.filter((segment) => segment.type === 'visible').map(normalized);
+  const top = views.top.segments.filter((segment) => segment.type === 'visible').map(normalized);
+  const side = views.side.segments.filter((segment) => segment.type === 'visible').map(normalized);
+  const diagonal = front
+    .filter((segment) => segment.x1 !== segment.x2 && segment.y1 !== segment.y2)
+    .sort((a, b) => Math.hypot(b.x2 - b.x1, b.y2 - b.y1) - Math.hypot(a.x2 - a.x1, a.y2 - a.y1))[0];
+  if (!diagonal) return null;
+
+  const topPoints = top.flatMap((segment) => [
+    { x: segment.x1, y: segment.y1 },
+    { x: segment.x2, y: segment.y2 },
+  ]);
+  const minX = Math.min(...topPoints.map((point) => point.x));
+  const maxX = Math.max(...topPoints.map((point) => point.x));
+  const minY = Math.min(...topPoints.map((point) => point.y));
+  const maxY = Math.max(...topPoints.map((point) => point.y));
+  if (!Number.isFinite(minX) || minX === maxX || minY === maxY) return null;
+  if (!hasSegment(top, minX, minY, maxX, minY) ||
+      !hasSegment(top, minX, maxY, maxX, maxY) ||
+      !hasSegment(top, minX, minY, minX, maxY) ||
+      !hasSegment(top, maxX, minY, maxX, maxY)) return null;
+
+  const highEnd = diagonal.y1 < diagonal.y2
+    ? { x: diagonal.x1, row: diagonal.y1 }
+    : { x: diagonal.x2, row: diagonal.y2 };
+  const lowEnd = diagonal.y1 > diagonal.y2
+    ? { x: diagonal.x1, row: diagonal.y1 }
+    : { x: diagonal.x2, row: diagonal.y2 };
+  const middle = front.find((segment) =>
+    segment.y1 === segment.y2 && segment.y1 > highEnd.row && segment.y1 < lowEnd.row && segment.x2 === maxX,
+  );
+  if (!middle) return null;
+
+  const channelStart = top.find((segment) =>
+    segment.y1 === segment.y2 && segment.x1 === minX && segment.x2 === highEnd.x &&
+    segment.y1 > minY && segment.y1 < maxY,
+  )?.y1;
+  const stepDepth = top.find((segment) =>
+    segment.y1 === segment.y2 && segment.x1 === middle.x1 && segment.x2 === maxX &&
+    segment.y1 > (channelStart ?? minY) && segment.y1 < maxY,
+  )?.y1;
+  if (channelStart === undefined || stepDepth === undefined) return null;
+
+  // Estas cinco linhas da planta dividem o topo nas quatro superfícies
+  // contínuas mostradas pelas vistas frontal e lateral.
+  if (!hasSegment(top, highEnd.x, channelStart, highEnd.x, stepDepth) ||
+      !hasSegment(top, middle.x1, stepDepth, middle.x1, maxY) ||
+      !hasSegment(top, lowEnd.x, channelStart, lowEnd.x, maxY)) return null;
+  if (!hasSegment(side, minY, highEnd.row, stepDepth, highEnd.row) ||
+      !hasSegment(side, channelStart, highEnd.row, channelStart, lowEnd.row) ||
+      !hasSegment(side, channelStart, lowEnd.row, maxY, lowEnd.row) ||
+      !hasSegment(side, stepDepth, highEnd.row, stepDepth, middle.y1) ||
+      !hasSegment(side, stepDepth, middle.y1, maxY, middle.y1)) return null;
+
+  const baseRow = Math.max(...front.flatMap((segment) => [segment.y1, segment.y2]));
+  const rowToHeight = (row: number) => views.front.rows - row;
+  const baseHeight = rowToHeight(baseRow);
+  const highHeight = rowToHeight(highEnd.row);
+  const middleHeight = rowToHeight(middle.y1);
+  const lowHeight = rowToHeight(lowEnd.row);
+  if (!(baseHeight < lowHeight && lowHeight < middleHeight && middleHeight < highHeight)) return null;
+
+  const positions: number[] = [];
+  const point = (x: number, depth: number, height: number) => new THREE.Vector3(
+    x - SIZE.x / 2,
+    height,
+    SIZE.y / 2 - depth,
+  );
+  const addTriangle = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => {
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+  };
+  const addQuad = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3) => {
+    addTriangle(a, b, c);
+    addTriangle(a, c, d);
+  };
+  const addTopQuad = (
+    x1: number, x2: number, y1: number, y2: number,
+    heightAt: (x: number, depth: number) => number,
+  ) => addQuad(
+    point(x1, y1, heightAt(x1, y1)), point(x2, y1, heightAt(x2, y1)),
+    point(x2, y2, heightAt(x2, y2)), point(x1, y2, heightAt(x1, y2)),
+  );
+
+  const flatHigh = () => highHeight;
+  const flatMiddle = () => middleHeight;
+  const flatLow = () => lowHeight;
+  const centralSlope = (x: number) => lowHeight +
+    ((x - lowEnd.x) / (highEnd.x - lowEnd.x)) * (highHeight - lowHeight);
+
+  // Mesa alta em L, piso baixo, plano central inclinado e mesa intermediária.
+  // A divisão usa arestas coincidentes dos dois lados. Isso evita que o
+  // EdgesGeometry interprete junções em T coplanares como arestas visíveis.
+  addTopQuad(minX, highEnd.x, minY, channelStart, flatHigh);
+  addTopQuad(highEnd.x, maxX, minY, channelStart, flatHigh);
+  addTopQuad(highEnd.x, maxX, channelStart, stepDepth, flatHigh);
+  addTopQuad(minX, lowEnd.x, channelStart, maxY, flatLow);
+  addTopQuad(lowEnd.x, middle.x1, channelStart, stepDepth, centralSlope);
+  addTopQuad(middle.x1, highEnd.x, channelStart, stepDepth, centralSlope);
+  addTopQuad(lowEnd.x, middle.x1, stepDepth, maxY, centralSlope);
+  addTopQuad(middle.x1, maxX, stepDepth, maxY, flatMiddle);
+
+  // Paredes internas onde duas regiões da planta têm alturas distintas.
+  addQuad(
+    point(lowEnd.x, channelStart, lowHeight), point(minX, channelStart, lowHeight),
+    point(minX, channelStart, highHeight), point(lowEnd.x, channelStart, highHeight),
+  );
+  addTriangle(
+    point(highEnd.x, channelStart, highHeight),
+    point(lowEnd.x, channelStart, lowHeight),
+    point(lowEnd.x, channelStart, highHeight),
+  );
+  addQuad(
+    point(maxX, stepDepth, middleHeight), point(highEnd.x, stepDepth, middleHeight),
+    point(highEnd.x, stepDepth, highHeight), point(maxX, stepDepth, highHeight),
+  );
+  addTriangle(
+    point(highEnd.x, stepDepth, middleHeight),
+    point(middle.x1, stepDepth, middleHeight),
+    point(highEnd.x, stepDepth, highHeight),
+  );
+
+  // Laterais externas e fundo fecham o sólido sem introduzir voxels.
+  addQuad(
+    point(minX, minY, baseHeight), point(maxX, minY, baseHeight),
+    point(maxX, minY, highHeight), point(minX, minY, highHeight),
+  );
+  addQuad(
+    point(maxX, minY, baseHeight), point(maxX, stepDepth, baseHeight),
+    point(maxX, stepDepth, highHeight), point(maxX, minY, highHeight),
+  );
+  addQuad(
+    point(maxX, stepDepth, baseHeight), point(maxX, maxY, baseHeight),
+    point(maxX, maxY, middleHeight), point(maxX, stepDepth, middleHeight),
+  );
+  addQuad(
+    point(minX, channelStart, baseHeight), point(minX, minY, baseHeight),
+    point(minX, minY, lowHeight), point(minX, channelStart, lowHeight),
+  );
+  addQuad(
+    point(minX, channelStart, lowHeight), point(minX, minY, lowHeight),
+    point(minX, minY, highHeight), point(minX, channelStart, highHeight),
+  );
+  addQuad(
+    point(minX, maxY, baseHeight), point(minX, channelStart, baseHeight),
+    point(minX, channelStart, lowHeight), point(minX, maxY, lowHeight),
+  );
+  addQuad(
+    point(lowEnd.x, maxY, baseHeight), point(minX, maxY, baseHeight),
+    point(minX, maxY, lowHeight), point(lowEnd.x, maxY, lowHeight),
+  );
+  addQuad(
+    point(middle.x1, maxY, baseHeight), point(lowEnd.x, maxY, baseHeight),
+    point(lowEnd.x, maxY, lowHeight), point(middle.x1, maxY, middleHeight),
+  );
+  addQuad(
+    point(maxX, maxY, baseHeight), point(middle.x1, maxY, baseHeight),
+    point(middle.x1, maxY, middleHeight), point(maxX, maxY, middleHeight),
+  );
+  addQuad(
+    point(minX, minY, baseHeight), point(minX, maxY, baseHeight),
+    point(maxX, maxY, baseHeight), point(maxX, minY, baseHeight),
+  );
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  geometry.userData.modelKind = 'chamfered-channel';
+  const uniqueVertices = new Set<string>();
+  for (let index = 0; index < positions.length; index += 3) {
+    uniqueVertices.add(`${positions[index]},${positions[index + 1]},${positions[index + 2]}`);
+  }
+  return { geometry, stats: { voxels: 0, faces: positions.length / 9, vertices: uniqueVertices.size } };
+}
+
+function createFrontInclinedPlane(segment: Segment, minDepth: number, maxDepth: number): THREE.BufferGeometry {
+  const point = (x: number, row: number, depth: number) => new THREE.Vector3(
+    x - SIZE.x / 2,
+    SIZE.z - row,
+    SIZE.y / 2 - depth,
+  );
+  return createPlane(point(segment.x1, segment.y1, minDepth), point(segment.x2, segment.y2, minDepth),
+    point(segment.x2, segment.y2, maxDepth), point(segment.x1, segment.y1, maxDepth));
+}
+
+function createSideInclinedPlane(segment: Segment, minWidth: number, maxWidth: number): THREE.BufferGeometry {
+  const point = (depth: number, row: number, x: number) => new THREE.Vector3(
+    x - SIZE.x / 2,
+    SIZE.z - row,
+    SIZE.y / 2 - depth,
+  );
+  return createPlane(point(segment.x1, segment.y1, minWidth), point(segment.x2, segment.y2, minWidth),
+    point(segment.x2, segment.y2, maxWidth), point(segment.x1, segment.y1, maxWidth));
+}
+
+function createPlane(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute([
+    a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z,
+    a.x, a.y, a.z, c.x, c.y, c.z, d.x, d.y, d.z,
+  ], 3));
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 /**

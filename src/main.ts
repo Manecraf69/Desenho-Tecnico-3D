@@ -1,5 +1,5 @@
 import './style.css';
-import { buildGeometry, buildHipRoofGeometry, createExampleViews, reconstruct, SIZE } from './geometry';
+import { buildChamferedChannelGeometry, buildGeometry, buildGeometryWithInclinedEdges, buildHipRoofGeometry, createExampleViews, reconstruct, reconstructFromViews, SIZE } from './geometry';
 import { ProjectionEditor } from './projection-editor';
 import { exportTechnicalPdf, projectFromPdf } from './pdf-export';
 import type { Mask, ProjectState, Tool, ViewName, ViewState } from './types';
@@ -117,23 +117,30 @@ function updateProject(): void {
       top: editors.top.getState(),
       side: editors.side.getState(),
     };
-    const roof = buildHipRoofGeometry(viewStates);
-    if (roof) {
+    const chamfer = buildChamferedChannelGeometry(viewStates);
+    const roof = chamfer ? null : buildHipRoofGeometry(viewStates);
+    if (chamfer) {
+      isoViewer.setGeometry(chamfer.geometry);
+      modelViewer.setGeometry(chamfer.geometry);
+      updateContinuousStats(chamfer.stats.vertices ?? 0, chamfer.stats.faces);
+      setStatus('ready', 'Canal chanfrado reconstruído');
+      chamfer.geometry.dispose();
+    } else if (roof) {
       isoViewer.setGeometry(roof.geometry);
       modelViewer.setGeometry(roof.geometry);
       updateSurfaceStats(roof.stats.vertices ?? 0, roof.stats.faces);
       setStatus('ready', 'Telhado de quatro águas reconstruído');
       roof.geometry.dispose();
     } else {
-      const occupancy = reconstruct(masks.front, masks.top, masks.side);
-      const result = buildGeometry(occupancy);
+      const occupancy = reconstructFromViews(viewStates, masks.front, masks.top, masks.side);
+      const result = buildGeometryWithInclinedEdges(occupancy, viewStates);
       isoViewer.setGeometry(result.geometry);
       modelViewer.setGeometry(result.geometry);
       updateStats(result.stats.voxels, result.stats.faces);
 
       if (result.stats.voxels === 0) {
         setStatus('error', 'Vistas incompatíveis');
-      } else if (!projectionsMatch(occupancy, masks)) {
+      } else if (!hasInclinedEdges(viewStates) && !projectionsMatch(occupancy, masks)) {
         setStatus('error', 'Há regiões sem correspondência entre as vistas');
       } else {
         setStatus('ready', 'Modelo reconstruído');
@@ -145,6 +152,12 @@ function updateProject(): void {
   updateHistoryButtons();
   scheduleSave();
   requestAnimationFrame(renderProjectionGuides);
+}
+
+function hasInclinedEdges(views: Record<ViewName, ViewState>): boolean {
+  return (['front', 'side'] as ViewName[]).some((name) => views[name].segments.some((segment) =>
+    segment.type === 'visible' && segment.x1 !== segment.x2 && segment.y1 !== segment.y2,
+  ));
 }
 
 function captureHistory(): void {
@@ -305,6 +318,11 @@ function updateStats(voxels: number, faces: number): void {
 function updateSurfaceStats(vertices: number, faces: number): void {
   requiredElement('voxel-count').textContent = `${vertices} vértices estruturais`;
   requiredElement('face-count').textContent = `${faces} águas inclinadas`;
+}
+
+function updateContinuousStats(vertices: number, faces: number): void {
+  requiredElement('voxel-count').textContent = `${vertices} vértices estruturais`;
+  requiredElement('face-count').textContent = `${faces} triângulos de superfície`;
 }
 
 function updateHistoryButtons(): void {
