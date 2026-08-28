@@ -226,6 +226,7 @@ button { color: inherit; }
 /* SVG drafting surface */
 .grid-background { fill: #fff; }
 .grid-minor { stroke: var(--grid-minor); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.grid-half { stroke: #e8f0f3; stroke-width: .7; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
 .grid-major { stroke: var(--grid-major); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .grid-border { fill: none; stroke: #9fb3bd; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
 .solid-cell { fill: #1d98c1; opacity: .13; pointer-events: none; }

@@ -276,15 +276,17 @@ function scheduleSave(): void {
 
 function projectionsMatch(occupancy: boolean[][][], masks: Record<ViewName, Mask>): boolean {
   const projected: Record<ViewName, Mask> = {
-    front: Array.from({ length: SIZE.z }, () => Array(SIZE.x).fill(false)),
-    top: Array.from({ length: SIZE.y }, () => Array(SIZE.x).fill(false)),
-    side: Array.from({ length: SIZE.z }, () => Array(SIZE.y).fill(false)),
+    front: masks.front.map((row) => row.map(() => false)),
+    top: masks.top.map((row) => row.map(() => false)),
+    side: masks.side.map((row) => row.map(() => false)),
   };
-  for (let x = 0; x < SIZE.x; x += 1) for (let y = 0; y < SIZE.y; y += 1) for (let z = 0; z < SIZE.z; z += 1) {
+  for (let x = 0; x < occupancy.length; x += 1)
+    for (let y = 0; y < (occupancy[x]?.length ?? 0); y += 1)
+      for (let z = 0; z < (occupancy[x]?.[y]?.length ?? 0); z += 1) {
     if (!occupancy[x][y][z]) continue;
-    projected.front[SIZE.z - 1 - z][x] = true;
+    projected.front[projected.front.length - 1 - z][x] = true;
     projected.top[y][x] = true;
-    projected.side[SIZE.z - 1 - z][y] = true;
+    projected.side[projected.side.length - 1 - z][y] = true;
   }
   return (Object.keys(masks) as ViewName[]).every((name) => masksEqual(masks[name], projected[name]));
 }

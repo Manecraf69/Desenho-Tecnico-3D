@@ -33,14 +33,14 @@ No Google Sites, dê ao bloco incorporado altura suficiente para a área de trab
 
 ## Como desenhar
 
-1. Escolha **Visível** e arraste entre dois pontos do grid. Linhas horizontais, verticais e diagonais são aceitas.
+1. Escolha **Visível** e arraste entre dois pontos do grid. Linhas horizontais, verticais e diagonais são aceitas. Segure `Shift` para encaixar em intervalos de `0,5`.
 2. Feche um contorno em cada uma das três vistas.
 3. A região fechada recebe uma cor azul-clara e passa a representar matéria.
 4. O modelo é reconstruído automaticamente pela interseção das três projeções.
 5. Use **Oculta** para representar arestas tracejadas. Elas são informativas nesta versão e não alteram a geometria.
 6. Selecione **Apagar** e clique em uma linha para removê-la.
 
-Atalhos: `V` para linha visível, `O` para linha oculta, `E` para apagar, `Ctrl+Z` para desfazer e `Ctrl+Y` para refazer.
+Atalhos: `V` para linha visível, `O` para linha oculta, `E` para apagar, `Shift` para meia unidade, `Ctrl+Z` para desfazer e `Ctrl+Y` para refazer.
 
 ## Escopo atual
 

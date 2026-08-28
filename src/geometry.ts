@@ -3,12 +3,15 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Mask, MeshStats, Occupancy, Segment, ViewName, ViewState } from './types';
 
 export const SIZE = { x: 10, y: 10, z: 10 } as const;
+export const RESOLUTION = 2;
+const CELL = 1 / RESOLUTION;
+const GRID = { x: SIZE.x * RESOLUTION, y: SIZE.y * RESOLUTION, z: SIZE.z * RESOLUTION } as const;
 
 export function reconstruct(front: Mask, top: Mask, side: Mask): Occupancy {
-  return Array.from({ length: SIZE.x }, (_, x) =>
-    Array.from({ length: SIZE.y }, (_, y) =>
-      Array.from({ length: SIZE.z }, (_, z) =>
-        Boolean(front[SIZE.z - 1 - z]?.[x] && top[y]?.[x] && side[SIZE.z - 1 - z]?.[y]),
+  return Array.from({ length: GRID.x }, (_, x) =>
+    Array.from({ length: GRID.y }, (_, y) =>
+      Array.from({ length: GRID.z }, (_, z) =>
+        Boolean(front[GRID.z - 1 - z]?.[x] && top[y]?.[x] && side[GRID.z - 1 - z]?.[y]),
       ),
     ),
   );
@@ -30,9 +33,9 @@ export function buildGeometry(occupancy: Occupancy): { geometry: THREE.BufferGeo
   ] as const;
   const order = [0, 1, 2, 0, 2, 3];
 
-  for (let x = 0; x < SIZE.x; x += 1) {
-    for (let y = 0; y < SIZE.y; y += 1) {
-      for (let z = 0; z < SIZE.z; z += 1) {
+  for (let x = 0; x < GRID.x; x += 1) {
+    for (let y = 0; y < GRID.y; y += 1) {
+      for (let z = 0; z < GRID.z; z += 1) {
         if (!occupancy[x]?.[y]?.[z]) continue;
         voxels += 1;
         for (const direction of directions) {
@@ -44,9 +47,9 @@ export function buildGeometry(occupancy: Occupancy): { geometry: THREE.BufferGeo
           for (const index of order) {
             const corner = direction.corners[index];
             positions.push(
-              x + corner[0] - SIZE.x / 2,
-              z + corner[2],
-              SIZE.y / 2 - (y + corner[1]),
+              (x + corner[0]) * CELL - SIZE.x / 2,
+              (z + corner[2]) * CELL,
+              SIZE.y / 2 - (y + corner[1]) * CELL,
             );
             normals.push(...direction.normal);
           }
@@ -190,8 +193,8 @@ export function createExampleViews(): Record<ViewName, ViewState> {
 }
 
 function createExampleOccupancy(): Occupancy {
-  const occupancy = Array.from({ length: SIZE.x }, () =>
-    Array.from({ length: SIZE.y }, () => Array(SIZE.z).fill(false)),
+  const occupancy = Array.from({ length: GRID.x }, () =>
+    Array.from({ length: GRID.y }, () => Array(GRID.z).fill(false)),
   );
 
   // Base com rasgo inferior frontal.
@@ -205,25 +208,29 @@ function createExampleOccupancy(): Occupancy {
 }
 
 function fillBox(occupancy: Occupancy, x1: number, x2: number, y1: number, y2: number, z1: number, z2: number): void {
-  for (let x = x1; x < x2; x += 1) for (let y = y1; y < y2; y += 1) for (let z = z1; z < z2; z += 1) occupancy[x][y][z] = true;
+  for (let x = x1 * RESOLUTION; x < x2 * RESOLUTION; x += 1)
+    for (let y = y1 * RESOLUTION; y < y2 * RESOLUTION; y += 1)
+      for (let z = z1 * RESOLUTION; z < z2 * RESOLUTION; z += 1) occupancy[x][y][z] = true;
 }
 
 function clearBox(occupancy: Occupancy, x1: number, x2: number, y1: number, y2: number, z1: number, z2: number): void {
-  for (let x = x1; x < x2; x += 1) for (let y = y1; y < y2; y += 1) for (let z = z1; z < z2; z += 1) occupancy[x][y][z] = false;
+  for (let x = x1 * RESOLUTION; x < x2 * RESOLUTION; x += 1)
+    for (let y = y1 * RESOLUTION; y < y2 * RESOLUTION; y += 1)
+      for (let z = z1 * RESOLUTION; z < z2 * RESOLUTION; z += 1) occupancy[x][y][z] = false;
 }
 
 function projectOccupancy(occupancy: Occupancy): Record<ViewName, Mask> {
-  const front = Array.from({ length: SIZE.z }, () => Array(SIZE.x).fill(false));
-  const top = Array.from({ length: SIZE.y }, () => Array(SIZE.x).fill(false));
-  const side = Array.from({ length: SIZE.z }, () => Array(SIZE.y).fill(false));
+  const front = Array.from({ length: GRID.z }, () => Array(GRID.x).fill(false));
+  const top = Array.from({ length: GRID.y }, () => Array(GRID.x).fill(false));
+  const side = Array.from({ length: GRID.z }, () => Array(GRID.y).fill(false));
 
-  for (let x = 0; x < SIZE.x; x += 1) {
-    for (let y = 0; y < SIZE.y; y += 1) {
-      for (let z = 0; z < SIZE.z; z += 1) {
+  for (let x = 0; x < GRID.x; x += 1) {
+    for (let y = 0; y < GRID.y; y += 1) {
+      for (let z = 0; z < GRID.z; z += 1) {
         if (!occupancy[x][y][z]) continue;
-        front[SIZE.z - 1 - z][x] = true;
+        front[GRID.z - 1 - z][x] = true;
         top[y][x] = true;
-        side[SIZE.z - 1 - z][y] = true;
+        side[GRID.z - 1 - z][y] = true;
       }
     }
   }
@@ -235,7 +242,7 @@ function maskToSegments(mask: Mask): Segment[] {
   const cols = mask[0]?.length ?? 0;
   const unit: Segment[] = [];
   const add = (x1: number, y1: number, x2: number, y2: number) => unit.push({
-    id: crypto.randomUUID(), x1, y1, x2, y2, type: 'visible',
+    id: crypto.randomUUID(), x1: x1 * CELL, y1: y1 * CELL, x2: x2 * CELL, y2: y2 * CELL, type: 'visible',
   });
 
   for (let y = 0; y < rows; y += 1) {

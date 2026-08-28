@@ -1,6 +1,7 @@
 import type { LineType, Mask, Point, Segment, Tool, ViewState } from './types';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const MASK_SCALE = 2;
 
 interface EditorOptions {
   svg: SVGSVGElement;
@@ -24,6 +25,7 @@ export class ProjectionEditor {
   private pointerId: number | null = null;
   private showFill = true;
   private showCoordinates = true;
+  private halfStep = false;
   private mask: Mask;
 
   constructor(options: EditorOptions) {
@@ -74,6 +76,22 @@ export class ProjectionEditor {
   }
 
   private bindEvents(): void {
+    window.addEventListener('keydown', (event) => {
+      if (event.key !== 'Shift' || this.halfStep) return;
+      this.halfStep = true;
+      this.render();
+    });
+    window.addEventListener('keyup', (event) => {
+      if (event.key !== 'Shift' || !this.halfStep) return;
+      this.halfStep = false;
+      this.render();
+    });
+    window.addEventListener('blur', () => {
+      if (!this.halfStep) return;
+      this.halfStep = false;
+      this.render();
+    });
+
     this.svg.addEventListener('pointerdown', (event) => {
       if (event.button !== 0 || this.getTool() === 'erase') return;
       event.preventDefault();
@@ -122,9 +140,10 @@ export class ProjectionEditor {
     const matrix = this.svg.getScreenCTM();
     if (!matrix) return { x: 0, y: 0 };
     const local = point.matrixTransform(matrix.inverse());
+    const step = event.shiftKey ? 0.5 : 1;
     return {
-      x: clamp(Math.round(local.x), 0, this.cols),
-      y: clamp(Math.round(local.y), 0, this.rows),
+      x: clamp(Math.round(local.x / step) * step, 0, this.cols),
+      y: clamp(Math.round(local.y / step) * step, 0, this.rows),
     };
   }
 
@@ -161,9 +180,9 @@ export class ProjectionEditor {
     if (this.showFill) {
       const fillGroup = svgElement('g');
       fillGroup.setAttribute('aria-hidden', 'true');
-      for (let row = 0; row < this.rows; row += 1) {
-        for (let col = 0; col < this.cols; col += 1) {
-          if (this.mask[row][col]) fillGroup.append(this.createRect('solid-cell', col, row, 1, 1));
+      for (let row = 0; row < this.mask.length; row += 1) {
+        for (let col = 0; col < (this.mask[row]?.length ?? 0); col += 1) {
+          if (this.mask[row][col]) fillGroup.append(this.createRect('solid-cell', col / MASK_SCALE, row / MASK_SCALE, 1 / MASK_SCALE, 1 / MASK_SCALE));
         }
       }
       this.svg.append(fillGroup);
@@ -171,6 +190,10 @@ export class ProjectionEditor {
 
     const grid = svgElement('g');
     grid.setAttribute('aria-hidden', 'true');
+    if (this.halfStep) {
+      for (let x = 0.5; x < this.cols; x += 1) grid.append(this.createLine('grid-half', x, 0, x, this.rows));
+      for (let y = 0.5; y < this.rows; y += 1) grid.append(this.createLine('grid-half', 0, y, this.cols, y));
+    }
     for (let x = 0; x <= this.cols; x += 1) {
       grid.append(this.createLine(x % 5 === 0 ? 'grid-major' : 'grid-minor', x, 0, x, this.rows));
     }
@@ -267,45 +290,54 @@ export class ProjectionEditor {
 }
 
 export function segmentsToMask(cols: number, rows: number, segments: Segment[]): Mask {
-  const vertical = Array.from({ length: rows }, () => Array(cols + 1).fill(false));
-  const horizontal = Array.from({ length: rows + 1 }, () => Array(cols).fill(false));
+  const scaledCols = cols * MASK_SCALE;
+  const scaledRows = rows * MASK_SCALE;
+  const scaledSegments = segments.map((segment) => ({
+    ...segment,
+    x1: Math.round(segment.x1 * MASK_SCALE),
+    y1: Math.round(segment.y1 * MASK_SCALE),
+    x2: Math.round(segment.x2 * MASK_SCALE),
+    y2: Math.round(segment.y2 * MASK_SCALE),
+  }));
+  const vertical = Array.from({ length: scaledRows }, () => Array(scaledCols + 1).fill(false));
+  const horizontal = Array.from({ length: scaledRows + 1 }, () => Array(scaledCols).fill(false));
 
-  for (const segment of segments.filter((item) => item.type === 'visible')) {
+  for (const segment of scaledSegments.filter((item) => item.type === 'visible')) {
     const line = normalizeSegment(segment);
     if (line.x1 === line.x2) {
       for (let y = line.y1; y < line.y2; y += 1) {
-        if (y >= 0 && y < rows && line.x1 >= 0 && line.x1 <= cols) vertical[y][line.x1] = true;
+        if (y >= 0 && y < scaledRows && line.x1 >= 0 && line.x1 <= scaledCols) vertical[y][line.x1] = true;
       }
     } else if (line.y1 === line.y2) {
       for (let x = line.x1; x < line.x2; x += 1) {
-        if (x >= 0 && x < cols && line.y1 >= 0 && line.y1 <= rows) horizontal[line.y1][x] = true;
+        if (x >= 0 && x < scaledCols && line.y1 >= 0 && line.y1 <= scaledRows) horizontal[line.y1][x] = true;
       }
     }
   }
 
-  const outside = Array.from({ length: rows }, () => Array(cols).fill(false));
+  const outside = Array.from({ length: scaledRows }, () => Array(scaledCols).fill(false));
   const queue: Point[] = [];
   const enqueue = (x: number, y: number) => {
-    if (x < 0 || x >= cols || y < 0 || y >= rows || outside[y][x]) return;
+    if (x < 0 || x >= scaledCols || y < 0 || y >= scaledRows || outside[y][x]) return;
     outside[y][x] = true;
     queue.push({ x, y });
   };
 
-  for (let x = 0; x < cols; x += 1) {
+  for (let x = 0; x < scaledCols; x += 1) {
     if (!horizontal[0][x]) enqueue(x, 0);
-    if (!horizontal[rows][x]) enqueue(x, rows - 1);
+    if (!horizontal[scaledRows][x]) enqueue(x, scaledRows - 1);
   }
-  for (let y = 0; y < rows; y += 1) {
+  for (let y = 0; y < scaledRows; y += 1) {
     if (!vertical[y][0]) enqueue(0, y);
-    if (!vertical[y][cols]) enqueue(cols - 1, y);
+    if (!vertical[y][scaledCols]) enqueue(scaledCols - 1, y);
   }
 
   for (let index = 0; index < queue.length; index += 1) {
     const { x, y } = queue[index];
     if (x > 0 && !vertical[y][x]) enqueue(x - 1, y);
-    if (x < cols - 1 && !vertical[y][x + 1]) enqueue(x + 1, y);
+    if (x < scaledCols - 1 && !vertical[y][x + 1]) enqueue(x + 1, y);
     if (y > 0 && !horizontal[y][x]) enqueue(x, y - 1);
-    if (y < rows - 1 && !horizontal[y + 1][x]) enqueue(x, y + 1);
+    if (y < scaledRows - 1 && !horizontal[y + 1][x]) enqueue(x, y + 1);
   }
 
   const mask = outside.map((row) => row.map((cell) => !cell));
@@ -313,9 +345,9 @@ export function segmentsToMask(cols: number, rows: number, segments: Segment[]):
   // O flood fill acima resolve contornos ortogonais. Para triângulos,
   // trapézios e outros polígonos, detectamos ciclos fechados e testamos
   // o centro de cada célula pelo método par/ímpar.
-  for (const polygon of findClosedPolygons(segments.filter((item) => item.type === 'visible'))) {
-    for (let row = 0; row < rows; row += 1) {
-      for (let col = 0; col < cols; col += 1) {
+  for (const polygon of findClosedPolygons(scaledSegments.filter((item) => item.type === 'visible'))) {
+    for (let row = 0; row < scaledRows; row += 1) {
+      for (let col = 0; col < scaledCols; col += 1) {
         if (pointInPolygon({ x: col + 0.5, y: row + 0.5 }, polygon)) mask[row][col] = true;
       }
     }
@@ -339,9 +371,13 @@ function sameGeometry(a: Segment, b: Segment): boolean {
 
 function isValidSegment(value: Segment): boolean {
   return Boolean(value) && ['visible', 'hidden'].includes(value.type) &&
-    Number.isInteger(value.x1) && Number.isInteger(value.y1) &&
-    Number.isInteger(value.x2) && Number.isInteger(value.y2) &&
+    isHalfStep(value.x1) && isHalfStep(value.y1) &&
+    isHalfStep(value.x2) && isHalfStep(value.y2) &&
     (value.x1 !== value.x2 || value.y1 !== value.y2);
+}
+
+function isHalfStep(value: number): boolean {
+  return Number.isFinite(value) && Number.isInteger(value * MASK_SCALE);
 }
 
 function findClosedPolygons(segments: Segment[]): Point[][] {

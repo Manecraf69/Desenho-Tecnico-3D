@@ -44,6 +44,9 @@ export class ModelViewer {
     this.scene.remove(this.object);
     disposeGroup(this.object);
     this.object = new THREE.Group();
+    // A vista frontal em primeiro diedro usa a convenção horizontal oposta
+    // à orientação nativa do espaço do Three.js.
+    this.object.scale.x = -1;
 
     if (source.getAttribute('position')?.count) {
       const geometry = source.clone();
@@ -77,11 +80,11 @@ export class ModelViewer {
     const distance = Math.max(this.size * 1.45, 13);
     const target = new THREE.Vector3(0, Math.max(this.size * 0.2, 1.6), 0);
     if (this.mode === 'isometric') {
-      // Quadrante usado na perspectiva técnica de referência: +X e -Z.
-      // A parte posterior recua à esquerda e a frontal avança à direita.
-      this.camera.position.copy(target).add(new THREE.Vector3(distance, distance, -distance));
+      // Observação frontal que mantém a plataforma à frente. A conversão
+      // primeiro-diedro/Three.js é resolvida pela reflexão X do modelo.
+      this.camera.position.copy(target).add(new THREE.Vector3(-distance, distance, -distance));
     } else {
-      this.camera.position.copy(target).add(new THREE.Vector3(distance * 1.15, distance * 0.85, -distance * 1.25));
+      this.camera.position.copy(target).add(new THREE.Vector3(-distance * 1.15, distance * 0.85, -distance * 1.25));
     }
     this.controls.target.copy(target);
     this.controls.update();
