@@ -9,7 +9,7 @@ export class ModelViewer {
   private readonly mode: ViewerMode;
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
-  private readonly camera: THREE.OrthographicCamera | THREE.PerspectiveCamera;
+  private readonly camera: THREE.OrthographicCamera;
   private readonly controls: OrbitControls;
   private object = new THREE.Group();
   private size = 10;
@@ -24,9 +24,7 @@ export class ModelViewer {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    this.camera = mode === 'isometric'
-      ? new THREE.OrthographicCamera(-8, 8, 8, -8, 0.1, 100)
-      : new THREE.PerspectiveCamera(38, 1, 0.1, 120);
+    this.camera = new THREE.OrthographicCamera(-8, 8, 8, -8, 0.1, 100);
     this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.enableDamping = mode === 'interactive';
     this.controls.dampingFactor = 0.07;
@@ -77,15 +75,12 @@ export class ModelViewer {
   }
 
   resetCamera(): void {
-    const distance = Math.max(this.size * 1.45, 13);
-    const target = new THREE.Vector3(0, Math.max(this.size * 0.2, 1.6), 0);
-    if (this.mode === 'isometric') {
-      // Observação frontal que mantém a plataforma à frente. A conversão
-      // primeiro-diedro/Three.js é resolvida pela reflexão X do modelo.
-      this.camera.position.copy(target).add(new THREE.Vector3(-distance, distance, -distance));
-    } else {
-      this.camera.position.copy(target).add(new THREE.Vector3(-distance * 1.15, distance * 0.85, -distance * 1.25));
-    }
+    const distance = Math.max(this.size * 2.2, 20);
+    const bounds = new THREE.Box3().setFromObject(this.object);
+    const target = bounds.isEmpty() ? new THREE.Vector3(0, 1.6, 0) : bounds.getCenter(new THREE.Vector3());
+    // The fixed view shows the front and right faces, matching the reference.
+    const isoDirection = new THREE.Vector3(this.mode === 'isometric' ? 1 : -1, 1, -1).normalize();
+    this.camera.position.copy(target).addScaledVector(isoDirection, distance);
     this.controls.target.copy(target);
     this.controls.update();
     this.resize();
@@ -97,7 +92,7 @@ export class ModelViewer {
     const previousGridVisibility = draftingGrid?.visible;
     const previousPosition = this.camera.position.clone();
     const previousTarget = this.controls.target.clone();
-    const previousZoom = this.camera instanceof THREE.OrthographicCamera ? this.camera.zoom : 1;
+    const previousZoom = this.camera.zoom;
     this.scene.background = new THREE.Color(0xf9fbfc);
     if (draftingGrid) draftingGrid.visible = false;
 
@@ -108,13 +103,13 @@ export class ModelViewer {
       const distance = Math.max(previousPosition.distanceTo(previousTarget), sphere.radius * 3);
       this.controls.target.copy(sphere.center);
       this.camera.position.copy(sphere.center).addScaledVector(direction, distance);
-      if (this.camera instanceof THREE.OrthographicCamera) {
+      {
         // A esfera envolvente garante margem em qualquer orientação isométrica.
         this.camera.zoom = THREE.MathUtils.clamp(this.camera.top / Math.max(sphere.radius * 1.22, 0.1), 0.1, 10);
         this.camera.updateProjectionMatrix();
       }
       this.controls.update();
-    } else if (this.camera instanceof THREE.OrthographicCamera) {
+    } else {
       this.camera.zoom = previousZoom;
       this.camera.updateProjectionMatrix();
     }
@@ -122,7 +117,7 @@ export class ModelViewer {
     const dataUrl = this.canvas.toDataURL('image/jpeg', quality);
     this.scene.background = previousBackground;
     if (draftingGrid && previousGridVisibility !== undefined) draftingGrid.visible = previousGridVisibility;
-    if (this.camera instanceof THREE.OrthographicCamera) {
+    {
       this.camera.zoom = previousZoom;
       this.camera.updateProjectionMatrix();
     }
@@ -159,15 +154,11 @@ export class ModelViewer {
     const height = Math.max(this.container.clientHeight, 1);
     this.renderer.setSize(width, height, false);
     const aspect = width / height;
-    if (this.camera instanceof THREE.PerspectiveCamera) {
-      this.camera.aspect = aspect;
-    } else {
-      const halfHeight = Math.max(this.size * 0.7, 6.8);
-      this.camera.left = -halfHeight * aspect;
-      this.camera.right = halfHeight * aspect;
-      this.camera.top = halfHeight;
-      this.camera.bottom = -halfHeight;
-    }
+    const halfHeight = Math.max(this.size * 0.7, 6.8);
+    this.camera.left = -halfHeight * aspect;
+    this.camera.right = halfHeight * aspect;
+    this.camera.top = halfHeight;
+    this.camera.bottom = -halfHeight;
     this.camera.updateProjectionMatrix();
   }
 
