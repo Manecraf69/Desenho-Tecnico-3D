@@ -21,8 +21,8 @@ export class ModelViewer {
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Os modelos devem ser exibidos sem sombras projetadas/recebidas.
+    this.renderer.shadowMap.enabled = false;
 
     this.camera = new THREE.OrthographicCamera(-8, 8, 8, -8, 0.1, 100);
     this.controls = new OrbitControls(this.camera, this.canvas);
@@ -57,8 +57,8 @@ export class ModelViewer {
         polygonOffsetUnits: 1,
       });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
 
       const edges = new THREE.LineSegments(
         new THREE.EdgesGeometry(geometry, 8),
@@ -137,8 +137,7 @@ export class ModelViewer {
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xc2d1d8, 2.1));
     const key = new THREE.DirectionalLight(0xffffff, 2.7);
     key.position.set(-7, 13, 9);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
+    key.castShadow = false;
     this.scene.add(key);
 
     const grid = new THREE.GridHelper(26, 26, 0xaac0ca, 0xd8e2e6);

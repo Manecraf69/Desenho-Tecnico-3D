@@ -347,6 +347,99 @@ export function buildChamferedChannelGeometry(
   return { geometry, stats: { voxels: 0, faces: positions.length / 9, vertices: uniqueVertices.size } };
 }
 
+/**
+ * Reconhece qualquer perfil frontal fechado extrudado em profundidade.
+ * Funciona com perfis convexos ou côncavos e preserva todas as diagonais
+ * como faces planas contínuas, sem recorrer à grade voxelizada.
+ */
+export function buildExtrudedProfileGeometry(
+  views: Record<ViewName, ViewState>,
+): { geometry: THREE.BufferGeometry; stats: MeshStats } | null {
+  const front = views.front.segments.filter((segment) => segment.type === 'visible').map(normalized);
+  const top = views.top.segments.filter((segment) => segment.type === 'visible').map(normalized);
+  const side = views.side.segments.filter((segment) => segment.type === 'visible').map(normalized);
+  const initialProfile = orderedClosedProfile(front);
+  if (!initialProfile || initialProfile.length < 3 || !front.some((segment) => segment.x1 !== segment.x2 && segment.y1 !== segment.y2)) return null;
+  let profile = initialProfile;
+  const profileMinX = Math.min(...profile.map((vertex) => vertex.x));
+  const profileMaxX = Math.max(...profile.map((vertex) => vertex.x));
+  const profileMinRow = Math.min(...profile.map((vertex) => vertex.row));
+  const profileMaxRow = Math.max(...profile.map((vertex) => vertex.row));
+
+  const topPoints = top.flatMap((segment) => [
+    { x: segment.x1, y: segment.y1 }, { x: segment.x2, y: segment.y2 },
+  ]);
+  const minX = Math.min(...topPoints.map((point) => point.x));
+  const maxX = Math.max(...topPoints.map((point) => point.x));
+  const minDepth = Math.min(...topPoints.map((point) => point.y));
+  const maxDepth = Math.max(...topPoints.map((point) => point.y));
+  if (minX !== profileMinX || maxX !== profileMaxX || minDepth === maxDepth) return null;
+  if (!hasSegment(top, minX, minDepth, maxX, minDepth) ||
+      !hasSegment(top, minX, maxDepth, maxX, maxDepth) ||
+      !hasSegment(top, minX, minDepth, minX, maxDepth) ||
+      !hasSegment(top, maxX, minDepth, maxX, maxDepth)) return null;
+
+  if (!hasSegment(side, minDepth, profileMinRow, minDepth, profileMaxRow) ||
+      !hasSegment(side, maxDepth, profileMinRow, maxDepth, profileMaxRow) ||
+      !coversHorizontal(side, profileMinRow, minDepth, maxDepth) ||
+      !coversHorizontal(side, profileMaxRow, minDepth, maxDepth)) return null;
+
+  const height = (row: number) => views.front.rows - row;
+  const signedArea = profile.reduce((sum, vertex, index) => {
+    const next = profile[(index + 1) % profile.length];
+    return sum + vertex.x * height(next.row) - next.x * height(vertex.row);
+  }, 0);
+  if (signedArea < 0) profile = [...profile].reverse();
+
+  const point = (x: number, depth: number, h: number) => new THREE.Vector3(
+    x - SIZE.x / 2, h, SIZE.y / 2 - depth,
+  );
+  const crossSection = profile.map((vertex) => ({ x: vertex.x, height: height(vertex.row) }));
+  const near = crossSection.map((vertex) => point(vertex.x, minDepth, vertex.height));
+  const far = crossSection.map((vertex) => point(vertex.x, maxDepth, vertex.height));
+  const positions: number[] = [];
+  const addTriangle = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => {
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+  };
+  const addQuad = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3) => {
+    addTriangle(a, b, c);
+    addTriangle(a, c, d);
+  };
+
+  // O triangulador do Three.js preserva corretamente os entalhes côncavos.
+  const triangles = THREE.ShapeUtils.triangulateShape(
+    crossSection.map((vertex) => new THREE.Vector2(vertex.x, vertex.height)),
+    [],
+  );
+  for (const [aIndex, bIndex, cIndex] of triangles) {
+    let a = near[aIndex]; let b = near[bIndex]; let c = near[cIndex];
+    const normal = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+    if (normal.z < 0) [b, c] = [c, b];
+    addTriangle(a, b, c);
+    addTriangle(far[aIndex], far[cIndex], far[bIndex]);
+  }
+  // Extrusão de cada aresta do perfil frontal.
+  for (let index = 0; index < near.length; index += 1) {
+    const next = (index + 1) % near.length;
+    addQuad(near[index], far[index], far[next], near[next]);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  geometry.userData.modelKind = 'extruded-profile';
+  return { geometry, stats: { voxels: 0, faces: positions.length / 9, vertices: near.length + far.length } };
+}
+
+// Mantém a API usada por integrações anteriores.
+export function buildGabledPrismGeometry(
+  views: Record<ViewName, ViewState>,
+): { geometry: THREE.BufferGeometry; stats: MeshStats } | null {
+  return buildExtrudedProfileGeometry(views);
+}
+
 function createFrontInclinedPlane(segment: Segment, minDepth: number, maxDepth: number): THREE.BufferGeometry {
   const point = (x: number, row: number, depth: number) => new THREE.Vector3(
     x - SIZE.x / 2,
@@ -619,4 +712,45 @@ function hasSegment(segments: Segment[], x1: number, y1: number, x2: number, y2:
     const line = normalized(segment);
     return line.x1 === target.x1 && line.y1 === target.y1 && line.x2 === target.x2 && line.y2 === target.y2;
   });
+}
+
+function coversHorizontal(segments: Segment[], row: number, start: number, end: number): boolean {
+  const intervals = segments
+    .filter((segment) => segment.y1 === row && segment.y2 === row && segment.x2 > start && segment.x1 < end)
+    .map((segment) => [Math.max(start, segment.x1), Math.min(end, segment.x2)] as const)
+    .sort((a, b) => a[0] - b[0]);
+  let covered = start;
+  for (const [from, to] of intervals) {
+    if (from > covered) return false;
+    covered = Math.max(covered, to);
+    if (covered >= end) return true;
+  }
+  return false;
+}
+
+function orderedClosedProfile(segments: Segment[]): Array<{ x: number; row: number }> | null {
+  if (segments.length < 3) return null;
+  const key = (point: { x: number; row: number }) => `${point.x},${point.row}`;
+  const adjacency = new Map<string, Array<{ point: { x: number; row: number }; segment: Segment }>>();
+  for (const segment of segments) {
+    const a = { x: segment.x1, row: segment.y1 };
+    const b = { x: segment.x2, row: segment.y2 };
+    adjacency.set(key(a), [...(adjacency.get(key(a)) ?? []), { point: b, segment }]);
+    adjacency.set(key(b), [...(adjacency.get(key(b)) ?? []), { point: a, segment }]);
+  }
+  if ([...adjacency.values()].some((neighbors) => neighbors.length !== 2)) return null;
+
+  const start = { x: segments[0].x1, row: segments[0].y1 };
+  const profile = [start];
+  const used = new Set<string>();
+  let current = start;
+  for (let guard = 0; guard <= segments.length; guard += 1) {
+    const next = (adjacency.get(key(current)) ?? []).find((entry) => !used.has(entry.segment.id));
+    if (!next) return null;
+    used.add(next.segment.id);
+    current = next.point;
+    if (key(current) === key(start)) break;
+    profile.push(current);
+  }
+  return used.size === segments.length && key(current) === key(start) ? profile : null;
 }

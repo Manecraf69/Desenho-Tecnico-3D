@@ -1,5 +1,5 @@
 import './style.css';
-import { buildChamferedChannelGeometry, buildGeometry, buildGeometryWithInclinedEdges, buildHipRoofGeometry, createExampleViews, reconstruct, reconstructFromViews, SIZE } from './geometry';
+import { buildChamferedChannelGeometry, buildExtrudedProfileGeometry, buildGeometry, buildGeometryWithInclinedEdges, buildHipRoofGeometry, createExampleViews, reconstruct, reconstructFromViews, SIZE } from './geometry';
 import { ProjectionEditor } from './projection-editor';
 import { exportTechnicalPdf, projectFromPdf } from './pdf-export';
 import type { Mask, ProjectState, Tool, ViewName, ViewState } from './types';
@@ -118,13 +118,20 @@ function updateProject(): void {
       side: editors.side.getState(),
     };
     const chamfer = buildChamferedChannelGeometry(viewStates);
-    const roof = chamfer ? null : buildHipRoofGeometry(viewStates);
+    const extrudedProfile = chamfer ? null : buildExtrudedProfileGeometry(viewStates);
+    const roof = chamfer || extrudedProfile ? null : buildHipRoofGeometry(viewStates);
     if (chamfer) {
       isoViewer.setGeometry(chamfer.geometry);
       modelViewer.setGeometry(chamfer.geometry);
       updateContinuousStats(chamfer.stats.vertices ?? 0, chamfer.stats.faces);
       setStatus('ready', 'Canal chanfrado reconstruído');
       chamfer.geometry.dispose();
+    } else if (extrudedProfile) {
+      isoViewer.setGeometry(extrudedProfile.geometry);
+      modelViewer.setGeometry(extrudedProfile.geometry);
+      updateContinuousStats(extrudedProfile.stats.vertices ?? 0, extrudedProfile.stats.faces);
+      setStatus('ready', 'Prisma de perfil reconstruído');
+      extrudedProfile.geometry.dispose();
     } else if (roof) {
       isoViewer.setGeometry(roof.geometry);
       modelViewer.setGeometry(roof.geometry);
