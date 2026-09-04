@@ -23,6 +23,10 @@ export class ProjectionEditor {
   private start: Point | null = null;
   private current: Point | null = null;
   private pointerId: number | null = null;
+  private readonly activePointers = new Map<number, { x: number; y: number }>();
+  private pinchStart: { distance: number; midpoint: { x: number; y: number }; viewBox: [number, number, number, number] } | null = null;
+  private gestureActive = false;
+  private viewBox: [number, number, number, number];
   private showFill = true;
   private showCoordinates = true;
   private halfStep = false;
@@ -36,7 +40,8 @@ export class ProjectionEditor {
     this.onBeforeChange = options.onBeforeChange;
     this.onChange = options.onChange;
     this.mask = emptyMask(this.cols, this.rows);
-    this.svg.setAttribute('viewBox', `-0.8 -0.8 ${this.cols + 1.6} ${this.rows + 1.6}`);
+    this.viewBox = [-0.8, -0.8, this.cols + 1.6, this.rows + 1.6];
+    this.applyViewBox();
     this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     this.bindEvents();
     this.render();
@@ -93,7 +98,16 @@ export class ProjectionEditor {
     });
 
     this.svg.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0 || this.getTool() === 'erase') return;
+      if (event.button !== 0) return;
+      this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (this.activePointers.size >= 2) {
+        this.cancelDrawing();
+        this.gestureActive = true;
+        this.pinchStart = this.getPinchState();
+        event.preventDefault();
+        return;
+      }
+      if (this.getTool() === 'erase') return;
       event.preventDefault();
       this.pointerId = event.pointerId;
       this.svg.setPointerCapture(event.pointerId);
@@ -103,12 +117,29 @@ export class ProjectionEditor {
     });
 
     this.svg.addEventListener('pointermove', (event) => {
+      if (this.activePointers.has(event.pointerId)) {
+        this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      }
+      if (this.gestureActive && this.activePointers.size >= 2 && this.pinchStart) {
+        this.updatePinch();
+        event.preventDefault();
+        return;
+      }
       if (this.pointerId !== event.pointerId || !this.start) return;
       this.current = this.snap(event);
       this.render();
     });
 
     const finish = (event: PointerEvent) => {
+      this.activePointers.delete(event.pointerId);
+      if (this.gestureActive) {
+        if (this.activePointers.size < 2) {
+          this.gestureActive = false;
+          this.pinchStart = null;
+        }
+        event.preventDefault();
+        return;
+      }
       if (this.pointerId !== event.pointerId || !this.start) return;
       const end = this.snap(event);
       if (end.x !== this.start.x || end.y !== this.start.y) {
@@ -125,12 +156,50 @@ export class ProjectionEditor {
 
     this.svg.addEventListener('pointerup', finish);
     this.svg.addEventListener('pointercancel', (event) => {
+      this.activePointers.delete(event.pointerId);
+      if (this.gestureActive) {
+        this.gestureActive = false;
+        this.pinchStart = null;
+        return;
+      }
       if (this.pointerId !== event.pointerId) return;
-      this.start = null;
-      this.current = null;
-      this.pointerId = null;
-      this.render();
+      this.cancelDrawing();
     });
+  }
+
+  private cancelDrawing(): void {
+    this.start = null;
+    this.current = null;
+    this.pointerId = null;
+    this.render();
+  }
+
+  private getPinchState(): { distance: number; midpoint: { x: number; y: number }; viewBox: [number, number, number, number] } {
+    const points = [...this.activePointers.values()];
+    const first = points[0] ?? { x: 0, y: 0 };
+    const second = points[1] ?? first;
+    return {
+      distance: Math.max(Math.hypot(second.x - first.x, second.y - first.y), 1),
+      midpoint: { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
+      viewBox: [...this.viewBox],
+    };
+  }
+
+  private updatePinch(): void {
+    if (!this.pinchStart) return;
+    const current = this.getPinchState();
+    const scale = this.pinchStart.distance / current.distance;
+    const rect = this.svg.getBoundingClientRect();
+    const width = clamp(this.pinchStart.viewBox[2] * scale, 3, this.cols + 1.6);
+    const height = clamp(this.pinchStart.viewBox[3] * scale, 3, this.rows + 1.6);
+    const dx = (current.midpoint.x - this.pinchStart.midpoint.x) * this.pinchStart.viewBox[2] / Math.max(rect.width, 1);
+    const dy = (current.midpoint.y - this.pinchStart.midpoint.y) * this.pinchStart.viewBox[3] / Math.max(rect.height, 1);
+    this.viewBox = [this.pinchStart.viewBox[0] - dx, this.pinchStart.viewBox[1] - dy, width, height];
+    this.applyViewBox();
+  }
+
+  private applyViewBox(): void {
+    this.svg.setAttribute('viewBox', this.viewBox.join(' '));
   }
 
   private snap(event: PointerEvent): Point {

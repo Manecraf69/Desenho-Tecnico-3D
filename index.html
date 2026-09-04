@@ -59,6 +59,7 @@
             <button class="mobile-view" data-mobile-view="top" aria-pressed="false">Superior</button>
             <button class="mobile-view" data-mobile-view="iso" aria-pressed="false">Isométrica</button>
             <button class="mobile-view" data-mobile-view="model" aria-pressed="false">Modelo interativo</button>
+            <button class="mobile-view" data-mobile-view="all" aria-pressed="false">Todas as vistas</button>
           </div>
         </nav>
         <nav class="mobile-menu" aria-label="Projeto e tela">
@@ -109,11 +110,11 @@
           <i></i>
         </label>
 
+        <button id="switch-mobile" class="mode-switch" type="button"><span aria-hidden="true">↔</span> Modo mobile</button>
         <div class="rail-tip">
           <strong>Como desenhar</strong>
           <p>Arraste entre pontos do grid, inclusive na diagonal. Segure Shift para usar meios pontos.</p>
         </div>
-        <button id="switch-mobile" class="mode-switch" type="button"><span aria-hidden="true">↔</span> Modo mobile</button>
       </aside>
 
       <main class="workspace">
@@ -136,7 +137,6 @@
               <span class="dimensions" id="front-dimensions">10 × 10</span>
             </header>
             <div class="svg-wrap"><svg id="front-view" aria-label="Área de desenho da vista frontal"></svg></div>
-            <footer><span>Eixo X</span><span>Altura Z</span></footer>
           </section>
 
           <section class="drawing-card side-card" aria-labelledby="side-title">
@@ -145,7 +145,6 @@
               <span class="dimensions" id="side-dimensions">10 × 10</span>
             </header>
             <div class="svg-wrap"><svg id="side-view" aria-label="Área de desenho da vista lateral esquerda"></svg></div>
-            <footer><span>Profundidade Y</span><span>Altura Z</span></footer>
           </section>
 
           <section class="drawing-card top-card" aria-labelledby="top-title">
@@ -154,13 +153,17 @@
               <span class="dimensions" id="top-dimensions">10 × 10</span>
             </header>
             <div class="svg-wrap"><svg id="top-view" aria-label="Área de desenho da vista superior"></svg></div>
-            <footer><span>Eixo X</span><span>Profundidade Y</span></footer>
           </section>
 
           <aside class="projection-note">
             <span class="projection-symbol" aria-hidden="true"><i></i><b></b></span>
             <div><strong>1º DIEDRO</strong><small>Vista superior abaixo da frontal</small></div>
           </aside>
+          <section class="all-views-card" aria-label="Todas as vistas">
+            <div id="all-views-scroll" class="all-views-scroll">
+              <div id="all-views-content" class="all-views-content"></div>
+            </div>
+          </section>
         </div>
 
         <section class="results-heading">

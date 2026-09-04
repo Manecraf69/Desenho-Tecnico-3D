@@ -118,6 +118,9 @@ button { color: inherit; }
   top: 68px;
   height: calc(100vh - 102px);
   z-index: 10;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .rail-label { padding: 0 10px; margin: 0 0 10px; }
@@ -153,13 +156,14 @@ button { color: inherit; }
 .switch-row i::after { content: ""; position: absolute; width: 13px; height: 13px; border-radius: 50%; left: 2px; top: 2px; background: #fff; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
 .switch-row input:checked + i { background: var(--cyan); }
 .switch-row input:checked + i::after { transform: translateX(14px); }
-.rail-tip { position: absolute; left: 18px; right: 18px; bottom: 22px; border-left: 2px solid var(--amber); padding: 2px 0 2px 12px; }
+.rail-tip { margin: 24px 3px 0; border-left: 2px solid var(--amber); padding: 2px 0 2px 12px; }
 .rail-tip strong { color: #435a68; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; }
 .rail-tip p { color: #81909a; font-size: 10px; line-height: 1.5; margin: 5px 0 0; }
 .mode-switch { width: 100%; height: 36px; display: flex; align-items: center; gap: 9px; margin-top: 5px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #596c78; text-align: left; font-size: 11px; font-weight: 600; cursor: pointer; }
 .mode-switch:hover { background: #edf3f6; color: var(--navy); }
 .mode-switch span { width: 27px; text-align: center; color: var(--blue); font-size: 17px; line-height: 1; }
 .mobile-navbars { display: none; }
+.all-views-card { display: none; }
 
 .workspace { grid-column: 2; grid-row: 2; padding: 32px clamp(30px, 4vw, 72px) 58px; overflow: hidden; }
 .workspace-heading, .results-heading { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 18px; }
@@ -243,6 +247,8 @@ button { color: inherit; }
   html.mobile-mode .mobile-menu:nth-child(3) .mobile-menu-panel { right: 0; }
   html.mobile-mode .mobile-menu-panel button { flex: 0 0 auto; min-height: 38px; padding: 0 11px; border: 0; border-radius: 3px; background: transparent; color: #536774; font-size: 10px; font-weight: 650; text-align: left; white-space: nowrap; cursor: pointer; }
   html.mobile-mode .mobile-menu-panel button.active { background: #dff0f6; color: var(--navy); }
+  html.mobile-mode .mobile-menu-panel button.active { border: 1px solid var(--cyan); box-shadow: inset 0 0 0 1px rgba(16,162,208,.16); }
+  html.mobile-mode .mobile-menu-panel button:disabled { opacity: .4; cursor: not-allowed; }
   html.mobile-mode .mobile-menu-panel button:active { transform: translateY(1px); }
   html.mobile-mode .mobile-nav-divider { flex: 0 0 1px; width: 100%; margin: 2px 0; background: var(--border); }
   html.mobile-mode .workspace { display: block; padding: 116px 8px 18px; min-height: 100dvh; overflow: visible; }
@@ -255,17 +261,25 @@ button { color: inherit; }
   html.mobile-mode .heading-tools { gap: 4px; }
   html.mobile-mode .heading-tools .button { height: 30px; padding: 0 7px; font-size: 9px; }
   html.mobile-mode .drawing-layout { display: block; }
-  html.mobile-mode .drawing-card, html.mobile-mode .viewer-card { display: none; }
-  html.mobile-mode .drawing-card.mobile-active, html.mobile-mode .viewer-card.mobile-active { display: block; }
+  html.mobile-mode .drawing-card, html.mobile-mode .viewer-card, html.mobile-mode .all-views-card { display: none; }
+  html.mobile-mode .drawing-card.mobile-active, html.mobile-mode .viewer-card.mobile-active, html.mobile-mode .all-views-card.mobile-active { display: block; }
   html.mobile-mode .projection-note, html.mobile-mode .projection-guides { display: none; }
   html.mobile-mode .drawing-card .svg-wrap { height: calc(100dvh - 238px); min-height: 260px; padding: 8px; }
-  html.mobile-mode .results-heading { margin: 22px 0 10px; }
+  html.mobile-mode .results-heading { display: none; }
   html.mobile-mode .results-heading h2 { font-size: 17px; }
   html.mobile-mode .status { max-width: 52%; font-size: 9px; }
   html.mobile-mode .viewer-grid { display: block; }
   html.mobile-mode .viewer { height: calc(100dvh - 220px); min-height: 300px; }
   html.mobile-mode .viewer-card > header, html.mobile-mode .drawing-card > header { padding: 0 10px; }
   html.mobile-mode .mouse-hint { font-size: 9px; }
+  html.mobile-mode .rail-tip { display: none; }
+  html.mobile-mode .all-views-card { background: var(--paper); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  html.mobile-mode .all-views-scroll { width: 100%; height: calc(100dvh - 150px); min-height: 300px; overflow: auto; overscroll-behavior: contain; touch-action: pan-x pan-y; background: #fcfdfd; }
+  html.mobile-mode .all-views-content { display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; gap: 8px; width: 620px; height: 420px; padding: 12px; }
+  html.mobile-mode .all-view-svg { display: block; width: 100%; height: 100%; min-width: 0; background: #fff; border: 1px solid #e3e9ec; }
+  html.mobile-mode .all-view-front { grid-column: 1; grid-row: 1; }
+  html.mobile-mode .all-view-side { grid-column: 2; grid-row: 1; }
+  html.mobile-mode .all-view-top { grid-column: 1; grid-row: 2; }
 }
 
 .app-footer { grid-column: 1 / -1; grid-row: 3; height: 34px; position: fixed; bottom: 0; left: 0; right: 0; z-index: 25; background: #0f2d42; color: #9bb0bd; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; font: 500 8px/1 IBM Plex Mono, monospace; letter-spacing: .3px; }

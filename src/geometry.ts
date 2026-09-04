@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import type { Mask, MeshStats, Occupancy, Segment, ViewName, ViewState } from './types';
+import type { LineType, Mask, MeshStats, Occupancy, Segment, ViewName, ViewState } from './types';
 
 export const SIZE = { x: 10, y: 10, z: 10 } as const;
 export const RESOLUTION = 2;
@@ -582,17 +582,40 @@ export function buildHipRoofGeometry(
 }
 
 export function createExampleViews(): Record<ViewName, ViewState> {
-  const occupancy = createExampleOccupancy();
-  const masks = projectOccupancy(occupancy);
-  const views: Record<ViewName, ViewState> = {
-    front: { cols: SIZE.x, rows: SIZE.z, segments: maskToSegments(masks.front) },
-    top: { cols: SIZE.x, rows: SIZE.y, segments: maskToSegments(masks.top) },
-    side: { cols: SIZE.y, rows: SIZE.z, segments: maskToSegments(masks.side) },
+  const segment = (x1: number, y1: number, x2: number, y2: number, type: LineType = 'visible'): Segment => ({
+    id: crypto.randomUUID(), x1, y1, x2, y2, type,
+  });
+  return {
+    front: {
+      cols: 10,
+      rows: 10,
+      segments: [
+        segment(2, 3, 3, 3), segment(2, 3, 2, 6), segment(3, 3, 3, 4),
+        segment(3, 4, 4, 4), segment(4, 2, 4, 4), segment(4, 2, 7, 2),
+        segment(7, 2, 7, 6), segment(6, 6, 7, 6), segment(6, 5.5, 6, 6),
+        segment(5, 5.5, 5, 6), segment(5, 5.5, 6, 5.5), segment(2, 6, 5, 6),
+        segment(2, 5, 7, 5),
+      ],
+    },
+    top: {
+      cols: 10,
+      rows: 10,
+      segments: [
+        segment(2, 4, 2, 7), segment(7, 4, 7, 7), segment(2, 7, 7, 7),
+        segment(2, 4, 7, 4), segment(3, 4, 3, 5), segment(4, 4, 4, 5),
+        segment(2, 5, 7, 5), segment(5, 4, 5, 7, 'hidden'), segment(6, 4, 6, 7, 'hidden'),
+      ],
+    },
+    side: {
+      cols: 10,
+      rows: 10,
+      segments: [
+        segment(4, 2, 4, 6), segment(4, 2, 5, 2), segment(4, 6, 7, 6),
+        segment(7, 5, 7, 6), segment(5, 5, 7, 5), segment(5, 2, 5, 5),
+        segment(4, 3, 5, 3), segment(4, 4, 5, 4, 'hidden'), segment(4, 5.5, 7, 5.5, 'hidden'),
+      ],
+    },
   };
-
-  views.side.segments.push({ id: crypto.randomUUID(), x1: 0, y1: 8, x2: 7, y2: 8, type: 'hidden' });
-  views.top.segments.push({ id: crypto.randomUUID(), x1: 7, y1: 0, x2: 7, y2: 4, type: 'hidden' });
-  return views;
 }
 
 function createExampleOccupancy(): Occupancy {

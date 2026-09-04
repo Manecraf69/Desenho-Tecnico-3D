@@ -5,7 +5,7 @@ import { exportTechnicalPdf, projectFromPdf } from './pdf-export';
 import type { Mask, ProjectState, Tool, ViewName, ViewState } from './types';
 import { ModelViewer } from './viewer';
 
-const STORAGE_KEY = 'traco-3d-project-v1';
+const STORAGE_KEY = 'traco-3d-project-v2';
 const DISPLAY_MODE_KEY = 'traco-3d-display-mode-v1';
 const MAX_HISTORY = 80;
 
@@ -13,6 +13,7 @@ let activeTool: Tool = 'visible';
 let undoStack: ProjectState[] = [];
 let redoStack: ProjectState[] = [];
 let saveTimer = 0;
+let pdfAvailable = false;
 
 const projectName = requiredElement<HTMLInputElement>('project-name');
 const undoButton = requiredElement<HTMLButtonElement>('undo');
@@ -23,6 +24,8 @@ const showCoordinates = requiredElement<HTMLInputElement>('show-coordinates');
 const showProjectors = requiredElement<HTMLInputElement>('show-projectors');
 const modelStatus = requiredElement<HTMLElement>('model-status');
 const projectionGuides = requiredElement<SVGSVGElement>('projection-guides');
+const allViewsScroll = requiredElement<HTMLElement>('all-views-scroll');
+const allViewsContent = requiredElement<HTMLElement>('all-views-content');
 
 const editors = {
   front: createEditor('front-view', SIZE.x, SIZE.z),
@@ -84,9 +87,17 @@ function bindInterface(): void {
       }
     });
   });
+  document.querySelectorAll<HTMLButtonElement>('.mobile-menu-panel button').forEach((button) => {
+    button.addEventListener('click', closeMobileMenus);
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (!(event.target instanceof Element) || event.target.closest('.mobile-menu')) return;
+    closeMobileMenus();
+  });
   document.querySelectorAll<HTMLButtonElement>('[data-mobile-view]').forEach((button) => {
     button.addEventListener('click', () => setMobileView(button.dataset.mobileView ?? 'front'));
   });
+  bindAllViewsZoom();
   document.querySelectorAll<HTMLButtonElement>('[data-mobile-action]').forEach((button) => {
     button.addEventListener('click', () => runMobileAction(button.dataset.mobileAction ?? ''));
   });
@@ -163,12 +174,55 @@ function setMobileView(view: string): void {
     const active = Boolean((view === 'iso' && card.querySelector('#iso-viewer')) || (view === 'model' && card.querySelector('#model-viewer')));
     card.classList.toggle('mobile-active', active);
   });
+  document.querySelector('.all-views-card')?.classList.toggle('mobile-active', view === 'all');
+  if (view === 'all') renderAllViews();
   document.querySelectorAll<HTMLButtonElement>('[data-mobile-view]').forEach((button) => {
     const active = button.dataset.mobileView === view;
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', String(active));
   });
   requestAnimationFrame(renderProjectionGuides);
+}
+
+function renderAllViews(): void {
+  allViewsContent.replaceChildren();
+  for (const [sourceId, className] of [['front-view', 'all-view-front'], ['side-view', 'all-view-side'], ['top-view', 'all-view-top']]) {
+    const clone = requiredElement<SVGSVGElement>(sourceId).cloneNode(true) as SVGSVGElement;
+    clone.removeAttribute('id');
+    clone.setAttribute('class', `all-view-svg ${className}`);
+    clone.setAttribute('aria-hidden', 'true');
+    clone.style.pointerEvents = 'none';
+    allViewsContent.append(clone);
+  }
+}
+
+function bindAllViewsZoom(): void {
+  const pointers = new Map<number, { x: number; y: number }>();
+  let startDistance = 1;
+  let startScale = 1;
+  let scale = 1;
+  allViewsScroll.addEventListener('pointerdown', (event) => {
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 2) {
+      const points = [...pointers.values()];
+      startDistance = Math.max(Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y), 1);
+      startScale = scale;
+    }
+  });
+  allViewsScroll.addEventListener('pointermove', (event) => {
+    if (!pointers.has(event.pointerId)) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size !== 2) return;
+    const points = [...pointers.values()];
+    const distance = Math.max(Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y), 1);
+    scale = Math.min(2.5, Math.max(.7, startScale * distance / startDistance));
+    allViewsContent.style.width = `${620 * scale}px`;
+    allViewsContent.style.height = `${420 * scale}px`;
+    event.preventDefault();
+  });
+  const release = (event: PointerEvent) => pointers.delete(event.pointerId);
+  allViewsScroll.addEventListener('pointerup', release);
+  allViewsScroll.addEventListener('pointercancel', release);
 }
 
 function runMobileAction(action: string): void {
@@ -180,6 +234,13 @@ function runMobileAction(action: string): void {
     desktop: () => setDisplayMode('desktop', true),
   };
   actions[action]?.();
+}
+
+function closeMobileMenus(): void {
+  document.querySelectorAll<HTMLElement>('.mobile-menu.open').forEach((menu) => {
+    menu.classList.remove('open');
+    menu.querySelector('.mobile-menu-trigger')?.setAttribute('aria-expanded', 'false');
+  });
 }
 
 function toggleMobileSetting(setting: string): void {
@@ -195,6 +256,7 @@ function toggleMobileSetting(setting: string): void {
 }
 
 function updateProject(): void {
+  setPdfAvailable(false);
   const masks = {
     front: editors.front.getMask(),
     top: editors.top.getMask(),
@@ -218,18 +280,21 @@ function updateProject(): void {
     const extrudedProfile = chamfer ? null : buildExtrudedProfileGeometry(viewStates);
     const roof = chamfer || extrudedProfile ? null : buildHipRoofGeometry(viewStates);
     if (chamfer) {
+      setPdfAvailable(true);
       isoViewer.setGeometry(chamfer.geometry);
       modelViewer.setGeometry(chamfer.geometry);
       updateContinuousStats(chamfer.stats.vertices ?? 0, chamfer.stats.faces);
       setStatus('ready', 'Canal chanfrado reconstruído');
       chamfer.geometry.dispose();
     } else if (extrudedProfile) {
+      setPdfAvailable(true);
       isoViewer.setGeometry(extrudedProfile.geometry);
       modelViewer.setGeometry(extrudedProfile.geometry);
       updateContinuousStats(extrudedProfile.stats.vertices ?? 0, extrudedProfile.stats.faces);
       setStatus('ready', 'Prisma de perfil reconstruído');
       extrudedProfile.geometry.dispose();
     } else if (roof) {
+      setPdfAvailable(true);
       isoViewer.setGeometry(roof.geometry);
       modelViewer.setGeometry(roof.geometry);
       updateSurfaceStats(roof.stats.vertices ?? 0, roof.stats.faces);
@@ -238,6 +303,7 @@ function updateProject(): void {
     } else {
       const occupancy = reconstructFromViews(viewStates, masks.front, masks.top, masks.side);
       const result = buildGeometryWithInclinedEdges(occupancy, viewStates);
+      setPdfAvailable(result.stats.voxels > 0 && (hasInclinedEdges(viewStates) || projectionsMatch(occupancy, masks)));
       isoViewer.setGeometry(result.geometry);
       modelViewer.setGeometry(result.geometry);
       updateStats(result.stats.voxels, result.stats.faces);
@@ -256,6 +322,7 @@ function updateProject(): void {
   updateHistoryButtons();
   scheduleSave();
   requestAnimationFrame(renderProjectionGuides);
+  if (document.querySelector('.all-views-card.mobile-active')) renderAllViews();
 }
 
 function hasInclinedEdges(views: Record<ViewName, ViewState>): boolean {
@@ -356,12 +423,25 @@ async function importProject(): Promise<void> {
 }
 
 function exportPdf(): void {
+  if (!pdfAvailable) {
+    toast('Complete as vistas antes de exportar o PDF');
+    return;
+  }
   exportTechnicalPdf({
     project: getProjectState(),
     perspective: isoViewer.captureJpeg(),
     showProjectors: showProjectors.checked,
   });
   toast('PDF técnico exportado com os dados editáveis');
+}
+
+function setPdfAvailable(value: boolean): void {
+  pdfAvailable = value;
+  requiredElement<HTMLButtonElement>('export-pdf').disabled = !value;
+  document.querySelectorAll<HTMLButtonElement>('[data-mobile-action="pdf"]').forEach((button) => {
+    button.disabled = !value;
+    button.setAttribute('aria-disabled', String(!value));
+  });
 }
 
 function loadInitialProject(): void {
