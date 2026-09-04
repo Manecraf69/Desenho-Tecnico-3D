@@ -19,6 +19,7 @@
 * { box-sizing: border-box; }
 
 html { min-width: 1080px; background: #edf1f3; }
+html.mobile-mode { min-width: 0; }
 
 body { margin: 0; min-height: 100vh; background: #edf1f3; }
 
@@ -155,6 +156,10 @@ button { color: inherit; }
 .rail-tip { position: absolute; left: 18px; right: 18px; bottom: 22px; border-left: 2px solid var(--amber); padding: 2px 0 2px 12px; }
 .rail-tip strong { color: #435a68; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; }
 .rail-tip p { color: #81909a; font-size: 10px; line-height: 1.5; margin: 5px 0 0; }
+.mode-switch { width: 100%; height: 36px; display: flex; align-items: center; gap: 9px; margin-top: 5px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #596c78; text-align: left; font-size: 11px; font-weight: 600; cursor: pointer; }
+.mode-switch:hover { background: #edf3f6; color: var(--navy); }
+.mode-switch span { width: 27px; text-align: center; color: var(--blue); font-size: 17px; line-height: 1; }
+.mobile-navbars { display: none; }
 
 .workspace { grid-column: 2; grid-row: 2; padding: 32px clamp(30px, 4vw, 72px) 58px; overflow: hidden; }
 .workspace-heading, .results-heading { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 18px; }
@@ -207,13 +212,58 @@ button { color: inherit; }
 .viewer-card > header { height: 52px; }
 .viewer-button { height: 28px; padding: 0 10px; border: 1px solid #d6e0e5; background: #fff; color: #6f818c; font-size: 9px; font-weight: 600; }
 .viewer-button:hover { border-color: #9eb7c3; color: var(--navy); }
-.viewer { height: clamp(330px, 34vw, 455px); position: relative; overflow: hidden; background: #f9fbfc; }
+.viewer { height: clamp(330px, 34vw, 455px); position: relative; overflow: hidden; background: #f9fbfc; touch-action: none; }
 .viewer canvas { width: 100%; height: 100%; display: block; outline: 0; }
 .viewer::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 50% 45%, transparent 0, transparent 42%, rgba(19,56,78,.025) 100%); z-index: 1; }
 .interactive .viewer { background: #eef3f5; }
 .mouse-hint { position: absolute; left: 50%; bottom: 13px; transform: translateX(-50%); white-space: nowrap; color: #788b96; background: rgba(255,255,255,.86); border: 1px solid #d7e1e6; border-radius: 14px; padding: 6px 11px; font-size: 8px; pointer-events: none; z-index: 2; }
 .mouse-hint span { color: var(--blue); font-size: 12px; vertical-align: -1px; margin-right: 3px; }
 .legend-edge { display: inline-block; width: 18px; border-top: 1.5px solid #183244; margin-right: 6px; vertical-align: 2px; }
+
+@media (min-width: 0px) {
+  html.mobile-mode body { min-width: 0; overflow-x: hidden; }
+  html.mobile-mode #app { display: block; min-height: 100dvh; }
+  html.mobile-mode .topbar { position: fixed; inset: 0 0 auto; display: flex; height: 50px; z-index: 40; }
+  html.mobile-mode .brand { height: 50px; padding: 0 12px; border-right: 0; gap: 7px; }
+  html.mobile-mode .brand-mark { transform: scale(.75) rotate(-30deg); margin-right: -4px; }
+  html.mobile-mode .brand > span:last-child { font-size: 15px; }
+  html.mobile-mode .document-title { flex: 1; min-width: 0; padding: 0 8px; }
+  html.mobile-mode .document-title > span { display: none; }
+  html.mobile-mode .document-title input { min-width: 0; width: 100%; height: 32px; font-size: 12px; }
+  html.mobile-mode .top-actions, html.mobile-mode .toolrail, html.mobile-mode .app-footer { display: none; }
+  html.mobile-mode .mobile-navbars { position: fixed; top: 50px; left: 0; right: 0; height: 52px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; background: #0f2d42; z-index: 40; }
+  html.mobile-mode .mobile-menu { position: relative; min-width: 0; }
+  html.mobile-mode .mobile-menu-trigger { width: 100%; height: 44px; padding: 0 5px; border: 0; border-radius: 4px; background: #f8fafb; color: var(--navy); font-size: 11px; font-weight: 700; cursor: pointer; }
+  html.mobile-mode .mobile-menu-trigger:first-letter { font-size: 17px; }
+  html.mobile-mode .mobile-menu.open .mobile-menu-trigger { background: #dff0f6; }
+  html.mobile-mode .mobile-menu-panel { position: absolute; top: 48px; display: none; flex-direction: column; gap: 3px; min-width: 170px; max-width: min(280px, 90vw); max-height: calc(100dvh - 112px); overflow-y: auto; padding: 5px; background: #f8fafb; border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 8px 20px rgba(15,45,66,.2); }
+  html.mobile-mode .mobile-menu.open .mobile-menu-panel { display: flex; }
+  html.mobile-mode .mobile-menu:nth-child(1) .mobile-menu-panel { left: 0; }
+  html.mobile-mode .mobile-menu:nth-child(2) .mobile-menu-panel { left: 50%; transform: translateX(-50%); }
+  html.mobile-mode .mobile-menu:nth-child(3) .mobile-menu-panel { right: 0; }
+  html.mobile-mode .mobile-menu-panel button { flex: 0 0 auto; min-height: 38px; padding: 0 11px; border: 0; border-radius: 3px; background: transparent; color: #536774; font-size: 10px; font-weight: 650; text-align: left; white-space: nowrap; cursor: pointer; }
+  html.mobile-mode .mobile-menu-panel button.active { background: #dff0f6; color: var(--navy); }
+  html.mobile-mode .mobile-menu-panel button:active { transform: translateY(1px); }
+  html.mobile-mode .mobile-nav-divider { flex: 0 0 1px; width: 100%; margin: 2px 0; background: var(--border); }
+  html.mobile-mode .workspace { display: block; padding: 116px 8px 18px; min-height: 100dvh; overflow: visible; }
+  html.mobile-mode .workspace-heading { align-items: center; margin-bottom: 10px; }
+  html.mobile-mode .workspace-heading .eyebrow { display: none; }
+  html.mobile-mode .workspace h1 { font-size: 17px; }
+  html.mobile-mode .heading-tools { gap: 4px; }
+  html.mobile-mode .heading-tools .button { height: 30px; padding: 0 7px; font-size: 9px; }
+  html.mobile-mode .drawing-layout { display: block; }
+  html.mobile-mode .drawing-card, html.mobile-mode .viewer-card { display: none; }
+  html.mobile-mode .drawing-card.mobile-active, html.mobile-mode .viewer-card.mobile-active { display: block; }
+  html.mobile-mode .projection-note, html.mobile-mode .projection-guides { display: none; }
+  html.mobile-mode .drawing-card .svg-wrap { height: calc(100dvh - 238px); min-height: 260px; padding: 8px; }
+  html.mobile-mode .results-heading { margin: 22px 0 10px; }
+  html.mobile-mode .results-heading h2 { font-size: 17px; }
+  html.mobile-mode .status { max-width: 52%; font-size: 9px; }
+  html.mobile-mode .viewer-grid { display: block; }
+  html.mobile-mode .viewer { height: calc(100dvh - 220px); min-height: 300px; }
+  html.mobile-mode .viewer-card > header, html.mobile-mode .drawing-card > header { padding: 0 10px; }
+  html.mobile-mode .mouse-hint { font-size: 9px; }
+}
 
 .app-footer { grid-column: 1 / -1; grid-row: 3; height: 34px; position: fixed; bottom: 0; left: 0; right: 0; z-index: 25; background: #0f2d42; color: #9bb0bd; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; font: 500 8px/1 IBM Plex Mono, monospace; letter-spacing: .3px; }
 .app-footer b { color: #c6d5dc; font-weight: 500; }

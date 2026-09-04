@@ -1,6 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 5 44 54" role="img" aria-labelledby="title">
   <title id="title">Traço 3D</title>
-  <rect width="64" height="64" rx="13" fill="#0d3858"/>
   <path d="M32 9 51 20v23L32 55 13 44V21Z" fill="none" stroke="#eaf8fc" stroke-width="3.5" stroke-linejoin="round"/>
   <path d="m13 21 19 11 19-12M32 32v23" fill="none" stroke="#10a2d0" stroke-width="3.5" stroke-linejoin="round"/>
   <path d="m23 27 9-5 9 5-9 5Z" fill="#f2a51a" stroke="#0d3858" stroke-width="1.5" stroke-linejoin="round"/>

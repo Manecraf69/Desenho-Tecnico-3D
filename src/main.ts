@@ -6,6 +6,7 @@ import type { Mask, ProjectState, Tool, ViewName, ViewState } from './types';
 import { ModelViewer } from './viewer';
 
 const STORAGE_KEY = 'traco-3d-project-v1';
+const DISPLAY_MODE_KEY = 'traco-3d-display-mode-v1';
 const MAX_HISTORY = 80;
 
 let activeTool: Tool = 'visible';
@@ -33,6 +34,7 @@ const isoViewer = new ModelViewer(requiredElement('iso-viewer'), 'isometric');
 const modelViewer = new ModelViewer(requiredElement('model-viewer'), 'interactive');
 
 bindInterface();
+initializeDisplayMode();
 loadInitialProject();
 updateProject();
 
@@ -62,6 +64,37 @@ function bindInterface(): void {
   requiredElement('open-project').addEventListener('click', () => fileInput.click());
   requiredElement('reset-iso').addEventListener('click', () => isoViewer.resetCamera());
   requiredElement('reset-camera').addEventListener('click', () => modelViewer.resetCamera());
+  requiredElement('fullscreen-toggle').addEventListener('click', toggleFullscreen);
+  requiredElement('switch-mobile').addEventListener('click', () => setDisplayMode('mobile', true));
+
+  document.querySelectorAll<HTMLButtonElement>('[data-mobile-tool]').forEach((button) => {
+    button.addEventListener('click', () => setTool(button.dataset.mobileTool as Tool));
+  });
+  document.querySelectorAll<HTMLButtonElement>('.mobile-menu-trigger').forEach((button) => {
+    button.addEventListener('click', () => {
+      const menu = button.closest<HTMLElement>('.mobile-menu');
+      const open = menu?.classList.toggle('open') ?? false;
+      button.setAttribute('aria-expanded', String(open));
+      if (open) {
+        document.querySelectorAll<HTMLElement>('.mobile-menu.open').forEach((other) => {
+          if (other !== menu) {
+            other.classList.remove('open');
+            other.querySelector('.mobile-menu-trigger')?.setAttribute('aria-expanded', 'false');
+          }
+        });
+      }
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-mobile-view]').forEach((button) => {
+    button.addEventListener('click', () => setMobileView(button.dataset.mobileView ?? 'front'));
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-mobile-action]').forEach((button) => {
+    button.addEventListener('click', () => runMobileAction(button.dataset.mobileAction ?? ''));
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) => {
+    button.addEventListener('click', () => toggleMobileSetting(button.dataset.toggle ?? ''));
+  });
+  document.addEventListener('fullscreenchange', updateFullscreenButtons);
 
   showFill.addEventListener('change', () => Object.values(editors).forEach((editor) => editor.setShowFill(showFill.checked)));
   showCoordinates.addEventListener('change', () => Object.values(editors).forEach((editor) => editor.setShowCoordinates(showCoordinates.checked)));
@@ -95,6 +128,90 @@ function setTool(tool: Tool): void {
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', String(active));
   });
+  document.querySelectorAll<HTMLButtonElement>('[data-mobile-tool]').forEach((button) => {
+    const active = button.dataset.mobileTool === tool;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+}
+
+function initializeDisplayMode(): void {
+  const saved = localStorage.getItem(DISPLAY_MODE_KEY);
+  setDisplayMode(saved === 'desktop' || saved === 'mobile' ? saved : detectDeviceMode(), false);
+}
+
+function detectDeviceMode(): 'desktop' | 'mobile' {
+  const browser = navigator as Navigator & { userAgentData?: { mobile?: boolean } };
+  if (typeof browser.userAgentData?.mobile === 'boolean') {
+    return browser.userAgentData.mobile ? 'mobile' : 'desktop';
+  }
+  if (/Android|iPhone|iPad|iPod|Windows Phone|webOS|BlackBerry/i.test(navigator.userAgent)) return 'mobile';
+  if (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1) return 'mobile';
+  return 'mobile';
+}
+
+function setDisplayMode(mode: 'desktop' | 'mobile', persist: boolean): void {
+  document.documentElement.classList.toggle('mobile-mode', mode === 'mobile');
+  document.documentElement.classList.toggle('desktop-mode', mode === 'desktop');
+  if (persist) localStorage.setItem(DISPLAY_MODE_KEY, mode);
+  if (mode === 'mobile') setMobileView('front');
+}
+
+function setMobileView(view: string): void {
+  document.querySelectorAll<HTMLElement>('.drawing-card').forEach((card) => {
+    card.classList.toggle('mobile-active', card.classList.contains(`${view}-card`));
+  });
+  document.querySelectorAll<HTMLElement>('.viewer-card').forEach((card) => {
+    const active = Boolean((view === 'iso' && card.querySelector('#iso-viewer')) || (view === 'model' && card.querySelector('#model-viewer')));
+    card.classList.toggle('mobile-active', active);
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-mobile-view]').forEach((button) => {
+    const active = button.dataset.mobileView === view;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  requestAnimationFrame(renderProjectionGuides);
+}
+
+function runMobileAction(action: string): void {
+  const actions: Record<string, () => void> = {
+    new: clearAll,
+    open: () => fileInput.click(),
+    save: exportProject,
+    pdf: exportPdf,
+    fullscreen: toggleFullscreen,
+    desktop: () => setDisplayMode('desktop', true),
+  };
+  actions[action]?.();
+}
+
+function toggleMobileSetting(setting: string): void {
+  const controls: Record<string, HTMLInputElement> = { fill: showFill, coordinates: showCoordinates, projectors: showProjectors };
+  const control = controls[setting];
+  if (!control) return;
+  control.checked = !control.checked;
+  control.dispatchEvent(new Event('change'));
+  document.querySelectorAll<HTMLButtonElement>(`[data-toggle="${setting}"]`).forEach((button) => {
+    button.classList.toggle('active', control.checked);
+    button.setAttribute('aria-pressed', String(control.checked));
+  });
+}
+
+async function toggleFullscreen(): Promise<void> {
+  if (document.fullscreenElement) {
+    await document.exitFullscreen();
+  } else if (document.documentElement.requestFullscreen) {
+    await document.documentElement.requestFullscreen();
+  } else {
+    toast('Tela cheia não disponível neste navegador');
+  }
+  updateFullscreenButtons();
+}
+
+function updateFullscreenButtons(): void {
+  const label = document.fullscreenElement ? 'Sair da tela cheia' : 'Tela cheia';
+  requiredElement('fullscreen-toggle').textContent = label;
+  requiredElement('mobile-fullscreen').textContent = label;
 }
 
 function updateProject(): void {

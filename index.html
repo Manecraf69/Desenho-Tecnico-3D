@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0e3654" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230d3858'/%3E%3Cpath d='M32 9 51 20v23L32 55 13 44V21Z' fill='none' stroke='%23eaf8fc' stroke-width='3.5' stroke-linejoin='round'/%3E%3Cpath d='m13 21 19 11 19-12M32 32v23' fill='none' stroke='%2310a2d0' stroke-width='3.5' stroke-linejoin='round'/%3E%3Cpath d='m23 27 9-5 9 5-9 5Z' fill='%23f2a51a' stroke='%230d3858' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='10 5 44 54'%3E%3Cpath d='M32 9 51 20v23L32 55 13 44V21Z' fill='none' stroke='%23eaf8fc' stroke-width='3.5' stroke-linejoin='round'/%3E%3Cpath d='m13 21 19 11 19-12M32 32v23' fill='none' stroke='%2310a2d0' stroke-width='3.5' stroke-linejoin='round'/%3E%3Cpath d='m23 27 9-5 9 5-9 5Z' fill='%23f2a51a' stroke='%230d3858' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E" />
     <meta
       name="description"
       content="Editor de projeções ortográficas em primeiro diedro com reconstrução 3D instantânea."
@@ -34,9 +34,46 @@
           <button id="open-project" class="button button-quiet">Abrir</button>
           <button id="save-project" class="button button-quiet">Salvar JSON</button>
           <button id="export-pdf" class="button button-primary">Exportar PDF</button>
+          <button id="fullscreen-toggle" class="button button-quiet" type="button">Tela cheia</button>
           <input id="file-input" type="file" accept="application/json,.json,application/pdf,.pdf" hidden />
         </nav>
       </header>
+
+      <div class="mobile-navbars" aria-label="Controles móveis">
+        <nav class="mobile-menu" aria-label="Linhas e exibição">
+          <button class="mobile-menu-trigger" type="button" aria-expanded="false">☰ <span>Linhas</span></button>
+          <div class="mobile-menu-panel">
+            <button class="mobile-tool active" data-mobile-tool="visible" aria-pressed="true">Visível</button>
+            <button class="mobile-tool" data-mobile-tool="hidden" aria-pressed="false">Oculta</button>
+            <button class="mobile-tool" data-mobile-tool="erase" aria-pressed="false">Apagar</button>
+            <span class="mobile-nav-divider"></span>
+            <button class="mobile-toggle active" data-toggle="fill" aria-pressed="true">Preenchimento</button>
+            <button class="mobile-toggle active" data-toggle="coordinates" aria-pressed="true">Coordenadas</button>
+            <button class="mobile-toggle" data-toggle="projectors" aria-pressed="false">Projetantes</button>
+          </div>
+        </nav>
+        <nav class="mobile-menu" aria-label="Visualização">
+          <button class="mobile-menu-trigger" type="button" aria-expanded="false">☰ <span>Vistas</span></button>
+          <div class="mobile-menu-panel">
+            <button class="mobile-view active" data-mobile-view="front" aria-pressed="true">Frontal</button>
+            <button class="mobile-view" data-mobile-view="side" aria-pressed="false">Lateral esquerda</button>
+            <button class="mobile-view" data-mobile-view="top" aria-pressed="false">Superior</button>
+            <button class="mobile-view" data-mobile-view="iso" aria-pressed="false">Isométrica</button>
+            <button class="mobile-view" data-mobile-view="model" aria-pressed="false">Modelo interativo</button>
+          </div>
+        </nav>
+        <nav class="mobile-menu" aria-label="Projeto e tela">
+          <button class="mobile-menu-trigger" type="button" aria-expanded="false">☰ <span>Projeto</span></button>
+          <div class="mobile-menu-panel">
+            <button data-mobile-action="new">Novo</button>
+            <button data-mobile-action="open">Abrir</button>
+            <button data-mobile-action="save">Salvar JSON</button>
+            <button data-mobile-action="pdf">Exportar PDF</button>
+            <button id="mobile-fullscreen" data-mobile-action="fullscreen">Tela cheia</button>
+            <button id="switch-desktop" data-mobile-action="desktop">Desktop</button>
+          </div>
+        </nav>
+      </div>
 
       <aside class="toolrail" aria-label="Ferramentas de desenho">
         <p class="rail-label">LINHAS</p>
@@ -78,6 +115,7 @@
           <strong>Como desenhar</strong>
           <p>Arraste entre pontos do grid, inclusive na diagonal. Segure Shift para usar meios pontos.</p>
         </div>
+        <button id="switch-mobile" class="mode-switch" type="button"><span aria-hidden="true">↔</span> Modo mobile</button>
       </aside>
 
       <main class="workspace">
