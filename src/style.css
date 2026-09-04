@@ -247,7 +247,10 @@ button { color: inherit; }
   html.mobile-mode .mobile-nav-divider { flex: 0 0 1px; width: 100%; margin: 2px 0; background: var(--border); }
   html.mobile-mode .workspace { display: block; padding: 116px 8px 18px; min-height: 100dvh; overflow: visible; }
   html.mobile-mode .workspace-heading { align-items: center; margin-bottom: 10px; }
-  html.mobile-mode .workspace-heading .eyebrow { display: none; }
+  html.mobile-mode .workspace-heading .eyebrow,
+  html.mobile-mode .workspace-heading h1,
+  html.mobile-mode .results-heading .eyebrow,
+  html.mobile-mode .results-heading h2 { display: none; }
   html.mobile-mode .workspace h1 { font-size: 17px; }
   html.mobile-mode .heading-tools { gap: 4px; }
   html.mobile-mode .heading-tools .button { height: 30px; padding: 0 7px; font-size: 9px; }

@@ -64,7 +64,6 @@ function bindInterface(): void {
   requiredElement('open-project').addEventListener('click', () => fileInput.click());
   requiredElement('reset-iso').addEventListener('click', () => isoViewer.resetCamera());
   requiredElement('reset-camera').addEventListener('click', () => modelViewer.resetCamera());
-  requiredElement('fullscreen-toggle').addEventListener('click', toggleFullscreen);
   requiredElement('switch-mobile').addEventListener('click', () => setDisplayMode('mobile', true));
 
   document.querySelectorAll<HTMLButtonElement>('[data-mobile-tool]').forEach((button) => {
@@ -94,7 +93,6 @@ function bindInterface(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((button) => {
     button.addEventListener('click', () => toggleMobileSetting(button.dataset.toggle ?? ''));
   });
-  document.addEventListener('fullscreenchange', updateFullscreenButtons);
 
   showFill.addEventListener('change', () => Object.values(editors).forEach((editor) => editor.setShowFill(showFill.checked)));
   showCoordinates.addEventListener('change', () => Object.values(editors).forEach((editor) => editor.setShowCoordinates(showCoordinates.checked)));
@@ -179,7 +177,6 @@ function runMobileAction(action: string): void {
     open: () => fileInput.click(),
     save: exportProject,
     pdf: exportPdf,
-    fullscreen: toggleFullscreen,
     desktop: () => setDisplayMode('desktop', true),
   };
   actions[action]?.();
@@ -195,23 +192,6 @@ function toggleMobileSetting(setting: string): void {
     button.classList.toggle('active', control.checked);
     button.setAttribute('aria-pressed', String(control.checked));
   });
-}
-
-async function toggleFullscreen(): Promise<void> {
-  if (document.fullscreenElement) {
-    await document.exitFullscreen();
-  } else if (document.documentElement.requestFullscreen) {
-    await document.documentElement.requestFullscreen();
-  } else {
-    toast('Tela cheia não disponível neste navegador');
-  }
-  updateFullscreenButtons();
-}
-
-function updateFullscreenButtons(): void {
-  const label = document.fullscreenElement ? 'Sair da tela cheia' : 'Tela cheia';
-  requiredElement('fullscreen-toggle').textContent = label;
-  requiredElement('mobile-fullscreen').textContent = label;
 }
 
 function updateProject(): void {
