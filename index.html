@@ -69,7 +69,7 @@
             <button data-mobile-action="open">Abrir</button>
             <button data-mobile-action="save">Salvar JSON</button>
             <button data-mobile-action="pdf">Exportar PDF</button>
-            <button id="switch-desktop" data-mobile-action="desktop">Desktop</button>
+            <button id="switch-desktop" data-mobile-action="desktop">↔ Modo desktop</button>
           </div>
         </nav>
       </div>
@@ -124,8 +124,21 @@
             <h1>Projeções ortográficas</h1>
           </div>
           <div class="heading-tools">
-            <button id="load-example" class="button button-outline">Carregar exemplo</button>
-            <button id="clear-all" class="button button-quiet danger">Limpar vistas</button>
+            <div class="history-actions">
+              <button id="workspace-undo" class="button button-quiet" type="button">Voltar</button>
+              <button id="workspace-redo" class="button button-quiet" type="button">Avançar</button>
+            </div>
+            <div class="view-actions">
+              <button id="load-example" class="button button-outline">Carregar exemplo</button>
+              <button id="clear-all-desktop" class="button button-outline" type="button">Limpar vistas</button>
+              <div id="clear-menu" class="clear-menu">
+                <button id="clear-menu-trigger" class="button button-outline" type="button" aria-expanded="false">Limpar vistas <span aria-hidden="true">⌄</span></button>
+                <div class="clear-menu-panel" role="menu">
+                  <button type="button" data-clear-action="all" role="menuitem">Limpar todas as vistas</button>
+                  <button type="button" data-clear-action="current" role="menuitem">Limpar vista atual</button>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 

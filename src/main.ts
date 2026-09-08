@@ -14,6 +14,7 @@ let undoStack: ProjectState[] = [];
 let redoStack: ProjectState[] = [];
 let saveTimer = 0;
 let pdfAvailable = false;
+let currentMobileView = 'front';
 
 const projectName = requiredElement<HTMLInputElement>('project-name');
 const undoButton = requiredElement<HTMLButtonElement>('undo');
@@ -60,7 +61,17 @@ function bindInterface(): void {
   undoButton.addEventListener('click', undo);
   redoButton.addEventListener('click', redo);
   requiredElement('load-example').addEventListener('click', loadExample);
-  requiredElement('clear-all').addEventListener('click', clearAll);
+  requiredElement('clear-all-desktop').addEventListener('click', clearAll);
+  requiredElement('clear-menu-trigger').addEventListener('click', toggleClearMenu);
+  document.querySelectorAll<HTMLButtonElement>('[data-clear-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (button.dataset.clearAction === 'all') clearAll();
+      else clearCurrentView();
+      closeClearMenu();
+    });
+  });
+  requiredElement('workspace-undo').addEventListener('click', undo);
+  requiredElement('workspace-redo').addEventListener('click', redo);
   requiredElement('new-project').addEventListener('click', clearAll);
   requiredElement('save-project').addEventListener('click', exportProject);
   requiredElement('export-pdf').addEventListener('click', exportPdf);
@@ -91,8 +102,9 @@ function bindInterface(): void {
     button.addEventListener('click', closeMobileMenus);
   });
   document.addEventListener('pointerdown', (event) => {
-    if (!(event.target instanceof Element) || event.target.closest('.mobile-menu')) return;
-    closeMobileMenus();
+    if (!(event.target instanceof Element)) return;
+    if (!event.target.closest('.mobile-menu')) closeMobileMenus();
+    if (!event.target.closest('.clear-menu')) closeClearMenu();
   });
   document.querySelectorAll<HTMLButtonElement>('[data-mobile-view]').forEach((button) => {
     button.addEventListener('click', () => setMobileView(button.dataset.mobileView ?? 'front'));
@@ -167,6 +179,7 @@ function setDisplayMode(mode: 'desktop' | 'mobile', persist: boolean): void {
 }
 
 function setMobileView(view: string): void {
+  currentMobileView = view;
   document.querySelectorAll<HTMLElement>('.drawing-card').forEach((card) => {
     card.classList.toggle('mobile-active', card.classList.contains(`${view}-card`));
   });
@@ -241,6 +254,35 @@ function closeMobileMenus(): void {
     menu.classList.remove('open');
     menu.querySelector('.mobile-menu-trigger')?.setAttribute('aria-expanded', 'false');
   });
+}
+
+function toggleClearMenu(): void {
+  const menu = requiredElement<HTMLElement>('clear-menu');
+  const trigger = requiredElement<HTMLButtonElement>('clear-menu-trigger');
+  const panel = menu.querySelector<HTMLElement>('.clear-menu-panel');
+  const open = menu.classList.toggle('open');
+  trigger.setAttribute('aria-expanded', String(open));
+  if (open && panel && document.documentElement.classList.contains('mobile-mode')) {
+    const bounds = trigger.getBoundingClientRect();
+    panel.style.position = 'fixed';
+    panel.style.top = `${bounds.bottom + 5}px`;
+    panel.style.left = `${Math.max(5, bounds.right - 180)}px`;
+    panel.style.right = 'auto';
+  }
+}
+
+function closeClearMenu(): void {
+  const menu = document.querySelector<HTMLElement>('.clear-menu.open');
+  if (!menu) return;
+  menu.classList.remove('open');
+  requiredElement('clear-menu-trigger').setAttribute('aria-expanded', 'false');
+  const panel = menu.querySelector<HTMLElement>('.clear-menu-panel');
+  if (panel) {
+    panel.style.position = '';
+    panel.style.top = '';
+    panel.style.left = '';
+    panel.style.right = '';
+  }
 }
 
 function toggleMobileSetting(setting: string): void {
@@ -435,6 +477,18 @@ function exportPdf(): void {
   toast('PDF técnico exportado com os dados editáveis');
 }
 
+function clearCurrentView(): void {
+  const editor = currentMobileView === 'front' ? editors.front : currentMobileView === 'side' ? editors.side : currentMobileView === 'top' ? editors.top : null;
+  if (!editor) {
+    toast('Selecione uma vista ortográfica para limpar');
+    return;
+  }
+  captureHistory();
+  editor.clear();
+  updateProject();
+  toast('Vista atual limpa. Use Ctrl+Z para recuperar.');
+}
+
 function setPdfAvailable(value: boolean): void {
   pdfAvailable = value;
   requiredElement<HTMLButtonElement>('export-pdf').disabled = !value;
@@ -512,6 +566,8 @@ function updateContinuousStats(vertices: number, faces: number): void {
 function updateHistoryButtons(): void {
   undoButton.disabled = undoStack.length === 0;
   redoButton.disabled = redoStack.length === 0;
+  requiredElement<HTMLButtonElement>('workspace-undo').disabled = undoStack.length === 0;
+  requiredElement<HTMLButtonElement>('workspace-redo').disabled = redoStack.length === 0;
 }
 
 function toast(message: string): void {
