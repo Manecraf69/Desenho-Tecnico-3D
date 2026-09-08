@@ -183,14 +183,14 @@ button { color: inherit; }
 
 .drawing-layout {
   display: grid;
-  grid-template-columns: minmax(410px, 1.18fr) minmax(330px, .9fr);
+  grid-template-columns: minmax(410px, 1fr) minmax(410px, 1fr);
   grid-template-rows: auto auto;
   gap: 16px;
   position: relative;
 }
 .projection-guides { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 4; }
-.projection-guide { fill: none; stroke: #e69a18; stroke-width: 1; stroke-dasharray: 5 5; opacity: .42; vector-effect: non-scaling-stroke; }
-.projection-guide.transfer { stroke: #168cb3; stroke-dasharray: 3 5; opacity: .48; }
+.projection-guide { fill: none; stroke: #0788b5; stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .78; vector-effect: non-scaling-stroke; }
+.projection-guide.transfer { stroke: #0788b5; stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .78; }
 .drawing-card { position: relative; z-index: 2; }
 .drawing-card, .viewer-card { background: var(--paper); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow); overflow: hidden; }
 .drawing-card > header, .viewer-card > header { height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; border-bottom: 1px solid #e3e9ec; }

@@ -627,28 +627,91 @@ function renderProjectionGuides(): void {
   const frontSvg = requiredElement<SVGSVGElement>('front-view');
   const topSvg = requiredElement<SVGSVGElement>('top-view');
   const sideSvg = requiredElement<SVGSVGElement>('side-view');
-  const frontCard = frontSvg.closest('.drawing-card')!.getBoundingClientRect();
-  const topCard = topSvg.closest('.drawing-card')!.getBoundingClientRect();
-  const sideCard = sideSvg.closest('.drawing-card')!.getBoundingClientRect();
-  const transferX = (frontCard.right + sideCard.left) / 2 - bounds.left;
-  const transferY = (frontCard.bottom + topCard.top) / 2 - bounds.top;
   const states = { front: editors.front.getState(), top: editors.top.getState(), side: editors.side.getState() };
 
   for (const x of commonCoordinates(states.front, 'x', states.top, 'x')) {
-    addGuide(svgToLayout(frontSvg, x, states.front.rows, bounds), svgToLayout(topSvg, x, 0, bounds));
+    addGuide(
+      svgToLayout(frontSvg, x, bottommostPointAtX(states.front, x), bounds),
+      svgToLayout(topSvg, x, topmostPointAtX(states.top, x), bounds),
+    );
   }
   for (const z of commonCoordinates(states.front, 'y', states.side, 'y')) {
-    addGuide(svgToLayout(frontSvg, states.front.cols, z, bounds), svgToLayout(sideSvg, 0, z, bounds));
+    addGuide(
+      svgToLayout(frontSvg, rightmostPointAtY(states.front, z), z, bounds),
+      svgToLayout(sideSvg, leftmostPointAtY(states.side, z), z, bounds),
+    );
   }
+  const transfers: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> = [];
   for (const depth of commonCoordinates(states.top, 'y', states.side, 'x')) {
-    const start = svgToLayout(topSvg, states.top.cols, depth, bounds);
-    const end = svgToLayout(sideSvg, depth, states.side.rows, bounds);
+    const start = svgToLayout(topSvg, rightmostPointAtY(states.top, depth), depth, bounds);
+    const end = svgToLayout(sideSvg, depth, bottommostPointAtX(states.side, depth), bounds);
     if (!start || !end) continue;
+    transfers.push({ start, end });
+  }
+
+  if (transfers.length === 0) return;
+  const fixedRadius = 72;
+  for (const { start, end } of transfers) {
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('class', 'projection-guide transfer');
-    path.setAttribute('d', `M ${start.x} ${start.y} C ${transferX} ${start.y}, ${transferX} ${transferY}, ${transferX} ${transferY} C ${transferX} ${transferY}, ${end.x} ${transferY}, ${end.x} ${end.y}`);
+    const radius = fixedRadius;
+    const arcStartX = end.x - radius;
+    const arcEndY = start.y - radius;
+    path.setAttribute('d', `M ${start.x} ${start.y} H ${arcStartX} A ${radius} ${radius} 0 0 0 ${end.x} ${arcEndY} V ${end.y}`);
     projectionGuides.append(path);
   }
+}
+
+function rightmostPointAtY(view: ViewState, y: number): number {
+  const points: number[] = [];
+  for (const segment of view.segments) {
+    if (segment.y1 === segment.y2 && segment.y1 === y) {
+      points.push(segment.x1, segment.x2);
+    } else if (segment.x1 === segment.x2 && between(y, segment.y1, segment.y2)) {
+      points.push(segment.x1);
+    }
+  }
+  return points.length > 0 ? Math.max(...points) : view.cols;
+}
+
+function leftmostPointAtY(view: ViewState, y: number): number {
+  const points: number[] = [];
+  for (const segment of view.segments) {
+    if (segment.y1 === segment.y2 && segment.y1 === y) {
+      points.push(segment.x1, segment.x2);
+    } else if (segment.x1 === segment.x2 && between(y, segment.y1, segment.y2)) {
+      points.push(segment.x1);
+    }
+  }
+  return points.length > 0 ? Math.min(...points) : 0;
+}
+
+function topmostPointAtX(view: ViewState, x: number): number {
+  const points: number[] = [];
+  for (const segment of view.segments) {
+    if (segment.x1 === segment.x2 && segment.x1 === x) {
+      points.push(segment.y1, segment.y2);
+    } else if (segment.y1 === segment.y2 && between(x, segment.x1, segment.x2)) {
+      points.push(segment.y1);
+    }
+  }
+  return points.length > 0 ? Math.min(...points) : 0;
+}
+
+function bottommostPointAtX(view: ViewState, x: number): number {
+  const points: number[] = [];
+  for (const segment of view.segments) {
+    if (segment.x1 === segment.x2 && segment.x1 === x) {
+      points.push(segment.y1, segment.y2);
+    } else if (segment.y1 === segment.y2 && between(x, segment.x1, segment.x2)) {
+      points.push(segment.y1);
+    }
+  }
+  return points.length > 0 ? Math.max(...points) : view.rows;
+}
+
+function between(value: number, first: number, second: number): boolean {
+  return value >= Math.min(first, second) && value <= Math.max(first, second);
 }
 
 function addGuide(start: { x: number; y: number } | null, end: { x: number; y: number } | null): void {
