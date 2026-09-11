@@ -6,7 +6,7 @@ Editor de projeções ortográficas com reconstrução instantânea de sólidos.
 
 Este projeto é distribuído como um único arquivo estático: `index.html`.
 
-Para publicar, hospede ou incorpore diretamente o `index.html` da raiz. Ele já contém o HTML, CSS e JavaScript necessários e não depende de servidor backend, banco de dados, CDN ou processo de build.
+Para publicar, hospede ou incorpore diretamente o `index.html` da raiz. Ele contém o HTML, CSS e JavaScript do projeto e carrega o Three.js e o OrbitControls por CDN, com versões fixas. Não depende de servidor backend, banco de dados ou processo de build.
 
 A pasta `assets/` contém arquivos auxiliares do repositório, mas não é necessária para executar a versão atual do editor.
 
