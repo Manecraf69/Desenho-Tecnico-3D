@@ -800,6 +800,15 @@
             this.bindEvents(),
             this.render());
         }
+        resetViewBox() {
+          ((this.viewBox = [-0.8, -0.8, this.cols + 1.6, this.rows + 1.6]),
+            this.applyViewBox(),
+            this.render());
+        }
+        isDefaultViewBox() {
+          const t = [-0.8, -0.8, this.cols + 1.6, this.rows + 1.6];
+          return this.viewBox.every((e, i) => Math.abs(e - t[i]) < 1e-9);
+        }
         getState() {
           return {
             cols: this.cols,
@@ -855,8 +864,7 @@
                     e.preventDefault());
                   return;
                 }
-                this.getTool() !== "erase" &&
-                  (e.preventDefault(),
+                (e.preventDefault(),
                   (this.pointerId = e.pointerId),
                   this.svg.setPointerCapture(e.pointerId),
                   (this.start = this.snap(e)),
@@ -891,12 +899,16 @@
             }
             if (this.pointerId !== e.pointerId || !this.start) return;
             const i = this.snap(e);
-            ((i.x !== this.start.x || i.y !== this.start.y) &&
-              (this.onBeforeChange(),
-              this.addSegment(this.start, i, this.getTool()),
-              this.recompute(),
-              this.onChange()),
-              (this.start = null),
+            if (i.x !== this.start.x || i.y !== this.start.y)
+              if (this.getTool() === "erase") this.eraseRectangle(this.start, i);
+              else {
+                this.onBeforeChange();
+                this.addSegment(this.start, i, this.getTool());
+                this.recompute();
+                this.onChange();
+              }
+            else if (this.getTool() === "erase") this.eraseClickedSegment(this.start);
+            ((this.start = null),
               (this.current = null),
               (this.pointerId = null),
               this.render());
@@ -914,11 +926,7 @@
             this.svg.addEventListener(
               "wheel",
               (e) => {
-                if (
-                  !document.documentElement.classList.contains("desktop-mode") ||
-                  !e.ctrlKey
-                )
-                  return;
+                if (!e.ctrlKey) return;
                 e.preventDefault();
                 const i = this.svg.getBoundingClientRect(),
                   r = this.viewBox[2],
@@ -983,7 +991,10 @@
             this.applyViewBox());
         }
         applyViewBox() {
-          this.svg.setAttribute("viewBox", this.viewBox.join(" "));
+          (this.svg.setAttribute("viewBox", this.viewBox.join(" ")),
+            document
+              .querySelector(`[data-reset-view="${this.svg.id.replace("-view", "")}"]`)
+              ?.toggleAttribute("hidden", this.isDefaultViewBox()));
         }
         snap(t) {
           const e = this.svg.createSVGPoint();
@@ -1007,6 +1018,27 @@
             type: i,
           });
           this.segments = normalizeSegments([...this.segments, r]);
+        }
+        eraseRectangle(t, e) {
+          const i = clipSegmentsOutsideRect(this.segments, {
+            x1: Math.min(t.x, e.x),
+            y1: Math.min(t.y, e.y),
+            x2: Math.max(t.x, e.x),
+            y2: Math.max(t.y, e.y),
+          });
+          if (!i.changed) return;
+          (this.onBeforeChange(),
+            (this.segments = normalizeSegments(i.segments)),
+            this.recompute(),
+            this.onChange());
+        }
+        eraseClickedSegment(t) {
+          const e = findSegmentAtPoint(this.segments, t, 0.45);
+          if (!e) return;
+          (this.onBeforeChange(),
+            (this.segments = this.segments.filter((t) => t.id !== e.id)),
+            this.recompute(),
+            this.onChange());
         }
         removeSegment(t) {
           (this.onBeforeChange(),
@@ -1087,32 +1119,35 @@
                 i.y1,
                 i.x2,
                 i.y2,
-              ),
-              a = (c) => {
-                this.getTool() === "erase" &&
-                  (c.stopPropagation(), this.removeSegment(i.id));
-              };
-            (s.addEventListener("pointerdown", a),
-              o.addEventListener("pointerdown", a),
-              r.append(s, o),
-              e.append(r));
+              );
+            (r.append(s, o), e.append(r));
           }
           if ((this.svg.append(e), this.start && this.current)) {
-            this.svg.append(
-              this.createLine(
-                "preview-line",
-                this.start.x,
-                this.start.y,
-                this.current.x,
-                this.current.y,
-              ),
-            );
-            const i = qe("circle");
-            (i.setAttribute("class", "snap-point"),
-              i.setAttribute("cx", String(this.current.x)),
-              i.setAttribute("cy", String(this.current.y)),
-              i.setAttribute("r", "0.14"),
-              this.svg.append(i));
+            if (this.getTool() === "erase") {
+              const i = qe("rect");
+              (i.setAttribute("class", "erase-selection"),
+                i.setAttribute("x", String(Math.min(this.start.x, this.current.x))),
+                i.setAttribute("y", String(Math.min(this.start.y, this.current.y))),
+                i.setAttribute("width", String(Math.abs(this.current.x - this.start.x))),
+                i.setAttribute("height", String(Math.abs(this.current.y - this.start.y))),
+                this.svg.append(i));
+            } else {
+              this.svg.append(
+                this.createLine(
+                  "preview-line",
+                  this.start.x,
+                  this.start.y,
+                  this.current.x,
+                  this.current.y,
+                ),
+              );
+              const i = qe("circle");
+              (i.setAttribute("class", "snap-point"),
+                i.setAttribute("cx", String(this.current.x)),
+                i.setAttribute("cy", String(this.current.y)),
+                i.setAttribute("r", "0.14"),
+                this.svg.append(i));
+            }
           }
           if (this.segments.length === 0) {
             const i = qe("text");
@@ -1298,6 +1333,67 @@
           });
         });
       }
+      function findSegmentAtPoint(n, t, e) {
+        const i = e * e;
+        for (let e = n.length - 1; e >= 0; e -= 1) {
+          const r = cs(n[e]),
+            s = r.x2 - r.x1,
+            o = r.y2 - r.y1,
+            a = s * s + o * o,
+            c = a ? Math.max(0, Math.min(1, ((t.x - r.x1) * s + (t.y - r.y1) * o) / a)) : 0,
+            l = r.x1 + c * s - t.x,
+            h = r.y1 + c * o - t.y;
+          if (l * l + h * h <= i) return r;
+        }
+        return null;
+      }
+      function clipSegmentsOutsideRect(n, t) {
+        const e = [],
+          i = 1e-9;
+        let r = !1;
+        for (const s of n) {
+          const o = cs(s),
+            a = o.x2 - o.x1,
+            c = o.y2 - o.y1;
+          let l = 0,
+            h = 1;
+          const u = (n, i, r, s) => {
+            if (Math.abs(n) < 1e-9) return i >= r - 1e-9 && i <= s + 1e-9;
+            let o = (r - i) / n,
+              a = (s - i) / n;
+            o > a && ([o, a] = [a, o]);
+            return (
+              (l = Math.max(l, o)),
+              (h = Math.min(h, a)),
+              l <= h + 1e-9
+            );
+          };
+          if (
+            !u(a, o.x1, t.x1, t.x2) ||
+            !u(c, o.y1, t.y1, t.y2) ||
+            l > h + i ||
+            h - l <= i
+          ) {
+            e.push(o);
+            continue;
+          }
+          r = !0;
+          l > i &&
+            e.push({
+              ...o,
+              x2: o.x1 + a * l,
+              y2: o.y1 + c * l,
+            });
+          h < 1 - i &&
+            e.push({
+              ...o,
+              id: crypto.randomUUID(),
+              x1: o.x1 + a * h,
+              y1: o.y1 + c * h,
+            });
+        }
+        return { segments: e, changed: r };
+      }
       function s_(n, t) {
         const e = cs(n),
           i = cs(t);
@@ -1413,7 +1509,7 @@
           o = Uint8Array.from(s, (a) => a.charCodeAt(0));
         return JSON.parse(new TextDecoder().decode(o));
       }
-      function d_({ project: n, perspective: t, showProjectors: e }) {
+      function d_({ project: n, perspective: t }) {
         const i = [],
           r = {
             front: Wr(24, 310, 382, 240, n.views.front),
@@ -1434,7 +1530,6 @@
               Ks(i, r.top, "VS  VISTA SUPERIOR", s));
           })(),
           p_(i, r.iso, "30  PERSPECTIVA ISOMETRICA", t),
-          e && m_(i, r, n.views),
           xi(
             i,
             24,
@@ -1719,6 +1814,7 @@ ${o}
         scene = new wu();
         camera;
         controls;
+        cameraHome = null;
         object = new Si();
         size = 10;
         constructor(t, e) {
@@ -1744,14 +1840,13 @@ ${o}
               (this.controls.touches.ONE = TOUCH.PAN),
               (this.controls.touches.TWO = TOUCH.DOLLY_PAN)),
             (this.controls.zoomToCursor = !0),
+            this.controls.addEventListener("change", () =>
+              this.updateResetButton(),
+            ),
             this.canvas.addEventListener(
               "wheel",
               (t) => {
-                if (
-                  !document.documentElement.classList.contains("desktop-mode") ||
-                  !t.ctrlKey
-                )
-                  return;
+                if (!t.ctrlKey) return;
                 t.preventDefault();
                 this.camera.zoom = el.clamp(
                   this.camera.zoom * (t.deltaY < 0 ? 1.12 : 1 / 1.12),
@@ -1805,7 +1900,26 @@ ${o}
             (this.camera.position.copy(i).addScaledVector(r, t),
             this.controls.target.copy(i),
             this.controls.update(),
-            this.resize());
+            this.resize(),
+            (this.cameraHome = {
+              position: this.camera.position.clone(),
+              target: this.controls.target.clone(),
+              zoom: this.camera.zoom,
+            }),
+            this.updateResetButton());
+        }
+        updateResetButton() {
+          const t = document.getElementById(
+            this.mode === "isometric" ? "reset-iso" : "reset-camera",
+          );
+          if (!t || !this.cameraHome) return;
+          const e =
+            this.camera.position.distanceToSquared(this.cameraHome.position) >
+              1e-10 ||
+            this.controls.target.distanceToSquared(this.cameraHome.target) >
+              1e-10 ||
+            Math.abs(this.camera.zoom - this.cameraHome.zoom) > 1e-10;
+          t.toggleAttribute("hidden", !e);
         }
         captureJpeg(t = 0.92, e = 900, i = 560) {
           const r = this.scene.background,
@@ -1866,6 +1980,7 @@ ${o}
             this.camera.position.copy(a),
             this.controls.target.copy(c),
             this.controls.update(),
+            this.updateResetButton(),
             this.renderer.setSize(d.x, d.y, !1),
             this.renderer.render(this.scene, this.camera),
             p
@@ -1915,6 +2030,8 @@ ${o}
       }
       const Ul = "traco-3d-project-v2",
         Il = "traco-3d-display-mode-v1",
+        Ml = "traco-3d-mobile-view-v1",
+        Prl = "traco-3d-projectors-v1",
         I_ = 80;
       let Nl = "visible",
         jn = [],
@@ -1941,6 +2058,7 @@ ${o}
         Xn = new Ll(Pt("iso-viewer"), "isometric"),
         vi = new Ll(Pt("model-viewer"), "interactive");
       N_();
+      P_();
       F_();
       X_();
       zi();
@@ -1976,6 +2094,11 @@ ${o}
           Pt("open-project").addEventListener("click", () => Ri.click()),
           Pt("reset-iso").addEventListener("click", () => Xn.resetCamera()),
           Pt("reset-camera").addEventListener("click", () => vi.resetCamera()),
+          document.querySelectorAll("[data-reset-view]").forEach((n) => {
+            n.addEventListener("click", () =>
+              Qt[n.dataset.resetView]?.resetViewBox(),
+            );
+          }),
           Pt("switch-mobile").addEventListener("click", () => fa("mobile", !0)),
           document.querySelectorAll("[data-mobile-tool]").forEach((n) => {
             n.addEventListener("click", () => eo(n.dataset.mobileTool));
@@ -2025,8 +2148,13 @@ ${o}
           $o.addEventListener("change", () =>
             Object.values(Qt).forEach((n) => n.setShowCoordinates($o.checked)),
           ),
-          fs.addEventListener("change", Ji),
+          fs.addEventListener("change", () => {
+            (localStorage.setItem(Prl, String(fs.checked)), Ji());
+          }),
           Bi.addEventListener("input", () => Vl()),
+          Bi.addEventListener("keydown", (n) => {
+            n.key === "Enter" && (n.preventDefault(), Bi.blur(), Vl());
+          }),
           Ri.addEventListener("change", V_),
           window.addEventListener("resize", () => requestAnimationFrame(Ji)),
           new ResizeObserver(() => requestAnimationFrame(Ji)).observe(
@@ -2049,6 +2177,7 @@ ${o}
       }
       function eo(n) {
         ((Nl = n),
+          document.documentElement.classList.toggle("erase-active", n === "erase"),
           document.querySelectorAll(".tool").forEach((t) => {
             const e = t.dataset.tool === n;
             (t.classList.toggle("active", e),
@@ -2063,6 +2192,14 @@ ${o}
       function F_() {
         const n = localStorage.getItem(Il);
         fa(n === "desktop" || n === "mobile" ? n : O_(), !1);
+      }
+      function P_() {
+        const n = localStorage.getItem(Prl);
+        if (n === "true" || n === "false") fs.checked = n === "true";
+        document.querySelectorAll('[data-toggle="projectors"]').forEach((t) => {
+          (t.classList.toggle("active", fs.checked),
+            t.setAttribute("aria-pressed", String(fs.checked)));
+        });
       }
       function O_() {
         const n = navigator;
@@ -2089,10 +2226,19 @@ ${o}
           (Xn.controls.enableZoom = n !== "desktop"),
           (vi.controls.enableZoom = n !== "desktop"),
           t && localStorage.setItem(Il, n),
-          n === "mobile" && zl("front"));
+          n === "mobile" &&
+            zl(
+              ["front", "side", "top", "iso", "model", "all"].includes(
+                localStorage.getItem(Ml),
+              )
+                ? localStorage.getItem(Ml)
+                : "front",
+            ));
       }
       function zl(n) {
         ((es = n),
+          ["front", "side", "top", "iso", "model", "all"].includes(n) &&
+            localStorage.setItem(Ml, n),
           document.documentElement.classList.toggle(
             "mobile-all-views",
             n === "all",
@@ -2386,7 +2532,6 @@ ${o}
         (h_({
           project: Hi(),
           perspective: Xn.captureJpeg(),
-          showProjectors: fs.checked,
         }),
           en("PDF técnico exportado com os dados editáveis"));
       }
@@ -3321,6 +3466,29 @@ ${o}
           monospace;
         color: #90a0a9;
       }
+      .drawing-header-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .view-reset {
+        min-height: 24px;
+        padding: 0 8px;
+        border: 1px solid #d6e0e5;
+        border-radius: 4px;
+        background: #fff;
+        color: #6f818c;
+        font-size: 9px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .view-reset:hover {
+        border-color: #9eb7c3;
+        color: var(--navy);
+      }
+      .view-reset[hidden] {
+        display: none;
+      }
       .drawing-card .svg-wrap {
         position: relative;
         z-index: 0;
@@ -3465,6 +3633,9 @@ ${o}
         color: #6f818c;
         font-size: 9px;
         font-weight: 600;
+      }
+      .viewer-button[hidden] {
+        display: none;
       }
       .viewer-button:hover {
         border-color: #9eb7c3;
@@ -3786,6 +3957,14 @@ ${o}
           min-height: 260px;
           padding: 8px;
         }
+        html.mobile-mode .view-reset {
+          min-height: 22px;
+          padding: 0 6px;
+          font-size: 8px;
+        }
+        html.mobile-mode .drawing-header-meta {
+          gap: 5px;
+        }
         html.mobile-mode .results-heading {
           display: none;
         }
@@ -3972,7 +4151,7 @@ ${o}
         stroke-width: 3;
         stroke-linecap: square;
         vector-effect: non-scaling-stroke;
-        cursor: pointer;
+        cursor: crosshair;
       }
       .technical-line.hidden {
         stroke-width: 2;
@@ -3985,11 +4164,23 @@ ${o}
         stroke: transparent;
         stroke-width: 13;
         vector-effect: non-scaling-stroke;
+        cursor: crosshair;
+      }
+      html.erase-active .technical-line,
+      html.erase-active .line-hit {
         cursor: pointer;
       }
       .preview-line {
         stroke: #0c9dcb;
         stroke-width: 2;
+        stroke-dasharray: 4 3;
+        vector-effect: non-scaling-stroke;
+        pointer-events: none;
+      }
+      .erase-selection {
+        fill: rgba(214, 64, 85, 0.14);
+        stroke: #d64055;
+        stroke-width: 1.5;
         stroke-dasharray: 4 3;
         vector-effect: non-scaling-stroke;
         pointer-events: none;
@@ -4102,9 +4293,11 @@ ${o}
       }
       html[data-theme="dark"] .button-primary:hover { background: linear-gradient(135deg, #ff77e3, #b17aff); }
       html[data-theme="dark"] .button-outline,
-      html[data-theme="dark"] .viewer-button { background: #18112f; border-color: #4d3d78; color: #d7caff; }
+      html[data-theme="dark"] .viewer-button,
+      html[data-theme="dark"] .view-reset { background: #18112f; border-color: #4d3d78; color: #d7caff; }
       html[data-theme="dark"] .button-outline:hover,
-      html[data-theme="dark"] .viewer-button:hover { border-color: #54dfff; color: #54dfff; }
+      html[data-theme="dark"] .viewer-button:hover,
+      html[data-theme="dark"] .view-reset:hover { border-color: #54dfff; color: #54dfff; }
       html[data-theme="dark"] #clear-all-desktop.button-outline {
         background: #18112f;
         border-color: #4d3d78;
@@ -4513,7 +4706,18 @@ ${o}
                 <span class="view-code">VF</span>
                 <h2 id="front-title">Vista frontal</h2>
               </div>
-              <span class="dimensions" id="front-dimensions">10 × 10</span>
+              <div class="drawing-header-meta">
+                <button
+                  class="view-reset"
+                  type="button"
+                  data-reset-view="front"
+                  hidden
+                  aria-label="Reenquadrar vista frontal"
+                >
+                  Reenquadrar
+                </button>
+                <span class="dimensions" id="front-dimensions">10 × 10</span>
+              </div>
             </header>
             <div class="svg-wrap">
               <svg
@@ -4529,7 +4733,18 @@ ${o}
                 <span class="view-code">VLE</span>
                 <h2 id="side-title">Vista lateral esquerda</h2>
               </div>
-              <span class="dimensions" id="side-dimensions">10 × 10</span>
+              <div class="drawing-header-meta">
+                <button
+                  class="view-reset"
+                  type="button"
+                  data-reset-view="side"
+                  hidden
+                  aria-label="Reenquadrar vista lateral esquerda"
+                >
+                  Reenquadrar
+                </button>
+                <span class="dimensions" id="side-dimensions">10 × 10</span>
+              </div>
             </header>
             <div class="svg-wrap">
               <svg
@@ -4545,7 +4760,18 @@ ${o}
                 <span class="view-code">VS</span>
                 <h2 id="top-title">Vista superior</h2>
               </div>
-              <span class="dimensions" id="top-dimensions">10 × 10</span>
+              <div class="drawing-header-meta">
+                <button
+                  class="view-reset"
+                  type="button"
+                  data-reset-view="top"
+                  hidden
+                  aria-label="Reenquadrar vista superior"
+                >
+                  Reenquadrar
+                </button>
+                <span class="dimensions" id="top-dimensions">10 × 10</span>
+              </div>
             </header>
             <div class="svg-wrap">
               <svg
@@ -4588,7 +4814,9 @@ ${o}
                 <span class="view-code amber">30°</span>
                 <h3 id="iso-title">Perspectiva isométrica</h3>
               </div>
-              <button id="reset-iso" class="viewer-button">Reenquadrar</button>
+              <button id="reset-iso" class="viewer-button" hidden>
+                Reenquadrar
+              </button>
             </header>
             <div id="iso-viewer" class="viewer">
               <canvas
@@ -4610,7 +4838,7 @@ ${o}
                 <span class="view-code blue">3D</span>
                 <h3 id="model-title">Modelo interativo</h3>
               </div>
-              <button id="reset-camera" class="viewer-button">
+              <button id="reset-camera" class="viewer-button" hidden>
                 Redefinir câmera
               </button>
             </header>
