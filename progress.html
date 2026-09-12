@@ -44,6 +44,7 @@
         MathUtils,
         Matrix4,
         MOUSE,
+        TOUCH,
         Mesh,
         MeshStandardMaterial,
         OrthographicCamera,
@@ -783,7 +784,7 @@
         viewBox;
         showFill = !0;
         showCoordinates = !0;
-        halfStep = !1;
+        halfStep = !0;
         mask;
         constructor(t) {
           ((this.svg = t.svg),
@@ -837,20 +838,7 @@
           ((this.showCoordinates = t), this.render());
         }
         bindEvents() {
-          (window.addEventListener("keydown", (e) => {
-            e.key !== "Shift" ||
-              this.halfStep ||
-              ((this.halfStep = !0), this.render());
-          }),
-            window.addEventListener("keyup", (e) => {
-              e.key !== "Shift" ||
-                !this.halfStep ||
-                ((this.halfStep = !1), this.render());
-            }),
-            window.addEventListener("blur", () => {
-              this.halfStep && ((this.halfStep = !1), this.render());
-            }),
-            this.svg.addEventListener("pointerdown", (e) => {
+          (this.svg.addEventListener("pointerdown", (e) => {
               if (e.button === 0) {
                 if (
                   (this.activePointers.set(e.pointerId, {
@@ -1001,7 +989,7 @@
           const i = this.svg.getScreenCTM();
           if (!i) return { x: 0, y: 0 };
           const r = e.matrixTransform(i.inverse()),
-            s = t.shiftKey ? 0.5 : 1;
+            s = 0.5;
           return {
             x: Vr(Math.round(r.x / s) * s, 0, this.cols),
             y: Vr(Math.round(r.y / s) * s, 0, this.rows),
@@ -1675,7 +1663,10 @@ ${o}
             (this.controls.dampingFactor = 0.07),
             (this.controls.enableRotate = e === "interactive"),
             (this.controls.enablePan = !0),
-            e === "isometric" && (this.controls.mouseButtons.LEFT = MOUSE.PAN),
+            e === "isometric" &&
+              ((this.controls.mouseButtons.LEFT = MOUSE.PAN),
+              (this.controls.touches.ONE = TOUCH.PAN),
+              (this.controls.touches.TWO = TOUCH.DOLLY_PAN)),
             (this.controls.zoomToCursor = !0),
             this.canvas.addEventListener(
               "wheel",
@@ -2026,6 +2017,10 @@ ${o}
       }
       function zl(n) {
         ((es = n),
+          document.documentElement.classList.toggle(
+            "mobile-all-views",
+            n === "all",
+          ),
           document.querySelectorAll(".drawing-card").forEach((t) => {
             t.classList.toggle(
               "mobile-active",
@@ -2064,6 +2059,10 @@ ${o}
             (e.style.pointerEvents = "none"),
             ls.append(e));
         }
+        const n = qe("svg");
+        (n.setAttribute("class", "all-view-guides"),
+          n.setAttribute("aria-hidden", "true"),
+          ls.append(n));
       }
       function B_() {
         const n = new Map();
@@ -2408,11 +2407,17 @@ ${o}
       }
       function en(n) {
         const t = Pt("toast-region"),
-          e = document.createElement("div");
-        ((e.className = "toast"),
+          e = document.createElement("div"),
+          i = (r) => {
+            if (r.dataset.closing) return;
+            ((r.dataset.closing = "true"), r.classList.add("toast-out"));
+            window.setTimeout(() => r.remove(), 180);
+          };
+        (t.querySelectorAll(".toast").forEach(i),
+          (e.className = "toast"),
           (e.textContent = n),
           t.append(e),
-          window.setTimeout(() => e.remove(), 3200));
+          window.setTimeout(() => i(e), 3200));
       }
       function q_(n) {
         return n.reduce((t, e) => t + e.filter(Boolean).length, 0);
@@ -2468,7 +2473,7 @@ ${o}
             });
       }
       function Ji() {
-        if ((Zi.replaceChildren(), !fs.checked)) return;
+        if ((Zi.replaceChildren(), Kc(), !fs.checked)) return;
         const n = Zi.parentElement;
         if (!n) return;
         const t = n.getBoundingClientRect();
@@ -2507,7 +2512,51 @@ ${o}
             "d",
             `M ${c.x} ${c.y} H ${f} A ${d} ${d} 0 0 0 ${l.x} ${u} V ${l.y}`,
           ),
-            Zi.append(h));
+          Zi.append(h));
+        }
+      }
+      function Kc() {
+        const n = ls.querySelector(".all-view-guides");
+        if (!n) return;
+        n.replaceChildren();
+        if (!fs.checked) return;
+        const t = ls.getBoundingClientRect();
+        if (t.width === 0 || t.height === 0) return;
+        n.setAttribute("viewBox", `0 0 ${t.width} ${t.height}`);
+        const e = ls.querySelector(".all-view-front"),
+          i = ls.querySelector(".all-view-top"),
+          r = ls.querySelector(".all-view-side");
+        if (!e || !i || !r) return;
+        const s = {
+          front: Qt.front.getState(),
+          top: Qt.top.getState(),
+          side: Qt.side.getState(),
+        };
+        for (const o of io(s.front, "x", s.top, "x"))
+          kc(gi(e, o, Hc(s.front, o), t), gi(i, o, Q_(s.top, o), t), n);
+        for (const o of io(s.front, "y", s.side, "y"))
+          kc(gi(e, zc(s.front, o), o, t), gi(r, J_(s.side, o), o, t), n);
+        const o = [];
+        for (const a of io(s.top, "y", s.side, "x")) {
+          const c = gi(i, zc(s.top, a), a, t),
+            l = gi(r, a, Hc(s.side, a), t);
+          !c || !l || o.push({ start: c, end: l });
+        }
+        const a = 72;
+        for (const { start: c, end: l } of o) {
+          const h = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "path",
+          );
+          h.setAttribute("class", "projection-guide transfer");
+          const d = a,
+            f = l.x - d,
+            u = c.y - d;
+          (h.setAttribute(
+            "d",
+            `M ${c.x} ${c.y} H ${f} A ${d} ${d} 0 0 0 ${l.x} ${u} V ${l.y}`,
+          ),
+            n.append(h));
         }
       }
       function zc(n, t) {
@@ -2545,7 +2594,7 @@ ${o}
       function ms(n, t, e) {
         return n >= Math.min(t, e) && n <= Math.max(t, e);
       }
-      function kc(n, t) {
+      function kc(n, t, target = Zi) {
         if (!n || !t) return;
         const e = document.createElementNS(
           "http://www.w3.org/2000/svg",
@@ -2556,7 +2605,7 @@ ${o}
           e.setAttribute("y1", String(n.y)),
           e.setAttribute("x2", String(t.x)),
           e.setAttribute("y2", String(t.y)),
-          Zi.append(e));
+          target.append(e));
       }
       function gi(n, t, e, i) {
         const r = n.getScreenCTM();
@@ -3032,6 +3081,12 @@ ${o}
         gap: 7px;
         margin-left: auto;
         order: 1;
+      }
+      .heading-tools .button {
+        width: 89px;
+        min-width: 89px;
+        padding-left: 8px;
+        padding-right: 8px;
       }
       .clear-menu {
         position: relative;
@@ -3528,6 +3583,10 @@ ${o}
         html.mobile-mode .mobile-menu-panel button:active {
           transform: translateY(1px);
         }
+        html.mobile-mode:not(.mobile-all-views)
+          .mobile-toggle[data-toggle="projectors"] {
+          display: none;
+        }
         html.mobile-mode .mobile-nav-divider {
           flex: 0 0 1px;
           width: 100%;
@@ -3562,11 +3621,40 @@ ${o}
           flex: none;
           margin-left: 0;
           gap: 4px;
-          overflow-x: auto;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          overflow: visible;
           scrollbar-width: none;
         }
+        html.mobile-mode .heading-tools .history-actions,
+        html.mobile-mode .heading-tools .view-actions {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          min-width: 0;
+          width: 100%;
+          gap: 4px;
+        }
+        html.mobile-mode .heading-tools .button {
+          width: auto;
+          min-width: 0;
+          max-width: none;
+          padding-left: 4px;
+          padding-right: 4px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        html.mobile-mode .heading-tools .view-actions > .button,
+        html.mobile-mode .heading-tools .clear-menu,
+        html.mobile-mode .heading-tools .clear-menu > .button {
+          width: 100%;
+          min-width: 0;
+        }
+        html.mobile-mode .heading-tools .button {
+          font-size: clamp(8px, 2.2vw, 10px);
+        }
         html.mobile-mode .history-actions {
-          display: flex;
+          display: grid;
         }
         html.mobile-mode .view-actions {
           margin-left: 0;
@@ -3583,7 +3671,7 @@ ${o}
         html.mobile-mode .heading-tools .button {
           height: 30px;
           padding: 0 7px;
-          font-size: 9px;
+          font-size: clamp(8px, 2.2vw, 10px);
         }
         html.mobile-mode .drawing-layout {
           display: block;
@@ -3650,6 +3738,7 @@ ${o}
           background: #fcfdfd;
         }
         html.mobile-mode .all-views-content {
+          position: relative;
           display: grid;
           grid-template-columns: 1fr 1fr;
           grid-template-rows: 1fr 1fr;
@@ -3658,6 +3747,15 @@ ${o}
           height: min(620px, calc(100vw - 16px));
           padding: 12px;
           box-sizing: border-box;
+        }
+        html.mobile-mode .all-view-guides {
+          position: absolute;
+          inset: 0;
+          z-index: 3;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          overflow: visible;
         }
         html.mobile-mode .all-view-svg {
           display: block;
@@ -3734,6 +3832,15 @@ ${o}
       }
       @keyframes toast-in {
         0% {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+      }
+      .toast-out {
+        animation: toast-out 0.18s ease-in forwards;
+      }
+      @keyframes toast-out {
+        to {
           opacity: 0;
           transform: translateY(8px);
         }
@@ -4228,8 +4335,8 @@ ${o}
         <div class="rail-tip">
           <strong>Como desenhar</strong>
           <p>
-            Arraste entre pontos do grid, inclusive na diagonal. Segure Shift
-            para usar meios pontos.
+            Arraste entre pontos do grid, inclusive na diagonal. Meio ponto
+            ativado por padrão.
           </p>
         </div>
       </aside>
@@ -4259,14 +4366,14 @@ ${o}
             </div>
             <div class="view-actions">
               <button id="load-example" class="button button-outline">
-                Carregar exemplo
+                Exemplo
               </button>
               <button
                 id="clear-all-desktop"
                 class="button button-outline"
                 type="button"
               >
-                Limpar vistas
+                Limpar
               </button>
               <div id="clear-menu" class="clear-menu">
                 <button
@@ -4275,7 +4382,7 @@ ${o}
                   type="button"
                   aria-expanded="false"
                 >
-                  Limpar vistas <span aria-hidden="true">⌄</span>
+                  Limpar <span aria-hidden="true">⌄</span>
                 </button>
                 <div class="clear-menu-panel" role="menu">
                   <button type="button" data-clear-action="all" role="menuitem">
@@ -4425,7 +4532,7 @@ ${o}
         <span
           ><i class="save-dot"></i><b id="save-state">Salvo localmente</b></span
         >
-        <span>Grid: 1 unidade · Shift: 0,5 · medidas sem escala</span>
+        <span>Grid: 0,5 unidade · medidas sem escala</span>
         <span>Traço 3D · Protótipo ortogonal</span>
       </footer>
     </div>
