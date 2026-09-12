@@ -920,7 +920,38 @@
                 return;
               }
               this.pointerId === e.pointerId && this.cancelDrawing();
-            }));
+            })),
+            this.svg.addEventListener(
+              "wheel",
+              (e) => {
+                if (
+                  !document.documentElement.classList.contains("desktop-mode") ||
+                  !e.ctrlKey
+                )
+                  return;
+                e.preventDefault();
+                const i = this.svg.getBoundingClientRect(),
+                  r = this.viewBox[2],
+                  s = this.viewBox[3],
+                  o =
+                    this.viewBox[0] +
+                    ((e.clientX - i.left) / Math.max(i.width, 1)) * r,
+                  a =
+                    this.viewBox[1] +
+                    ((e.clientY - i.top) / Math.max(i.height, 1)) * s,
+                  c = e.deltaY > 0 ? 1.12 : 1 / 1.12,
+                  l = Vr(r * c, 3, this.cols + 1.6),
+                  h = Vr(s * c, 3, this.rows + 1.6);
+                ((this.viewBox = [
+                  o - ((o - this.viewBox[0]) * l) / r,
+                  a - ((a - this.viewBox[1]) * h) / s,
+                  l,
+                  h,
+                ]),
+                  this.applyViewBox());
+              },
+              { passive: !1 },
+            );
         }
         cancelDrawing() {
           ((this.start = null),
@@ -1330,9 +1361,14 @@
           xi(i, 24, 574, 15, "TRAÇO 3D", !0, [0.05, 0.22, 0.34]),
           xi(i, 118, 574, 10, n.name, !0, [0.14, 0.22, 0.27]),
           xi(i, 818, 574, 6, "PRIMEIRO DIEDRO", !1, [0.42, 0.5, 0.55], "right"),
-          Ks(i, r.front, "VF  VISTA FRONTAL"),
-          Ks(i, r.side, "VLE  VISTA LATERAL ESQUERDA"),
-          Ks(i, r.top, "VS  VISTA SUPERIOR"),
+          (() => {
+            const s = Math.min(
+              ...[r.front, r.side, r.top].map((e) => Rs(e)),
+            );
+            (Ks(i, r.front, "VF  VISTA FRONTAL", s),
+              Ks(i, r.side, "VLE  VISTA LATERAL ESQUERDA", s),
+              Ks(i, r.top, "VS  VISTA SUPERIOR", s));
+          })(),
           p_(i, r.iso, "30  PERSPECTIVA ISOMETRICA", t),
           e && m_(i, r, n.views),
           xi(
@@ -1395,7 +1431,19 @@
           gridY: t + 10,
         };
       }
-      function Ks(n, t, e) {
+      function Rs(n) {
+        const t = n.view,
+          e =
+            t.segments.length > 0
+              ? t.segments
+              : [{ x1: 0, y1: 0, x2: t.cols, y2: t.rows }],
+          i = e.flatMap((s) => [s.x1, s.x2]),
+          r = e.flatMap((s) => [s.y1, s.y2]),
+          o = Math.max(Math.max(...i) - Math.min(...i), 1),
+          a = Math.max(Math.max(...r) - Math.min(...r), 1);
+        return Math.min((n.width - 30) / o, (n.height - 42) / a) * 0.92;
+      }
+      function Ks(n, t, e, sharedScale) {
         Rl(n, t, e);
         const i = t.view,
           r =
@@ -1411,9 +1459,8 @@
         ((t.minX = a), (t.maxX = c), (t.minY = l), (t.maxY = h));
         const d = Math.max(c - a, 1),
           f = Math.max(h - l, 1),
-          u = t.width - 30,
-          g = t.height - 42,
-          M = Math.min(u / d, g / f) * 0.92,
+          M =
+            sharedScale ?? Math.min((t.width - 30) / d, (t.height - 42) / f) * 0.92,
           m = t.x + t.width / 2,
           p = t.y + (t.height - 24) / 2 - 2;
         ((t.gridX = m - ((a + c) / 2) * M),
@@ -1630,6 +1677,25 @@ ${o}
             (this.controls.enablePan = !0),
             e === "isometric" && (this.controls.mouseButtons.LEFT = MOUSE.PAN),
             (this.controls.zoomToCursor = !0),
+            this.canvas.addEventListener(
+              "wheel",
+              (t) => {
+                if (
+                  !document.documentElement.classList.contains("desktop-mode") ||
+                  !t.ctrlKey
+                )
+                  return;
+                t.preventDefault();
+                this.camera.zoom = el.clamp(
+                  this.camera.zoom * (t.deltaY < 0 ? 1.12 : 1 / 1.12),
+                  0.1,
+                  10,
+                );
+                this.camera.updateProjectionMatrix();
+                this.controls.update();
+              },
+              { passive: !1 },
+            ),
             this.setupScene(),
             this.resetCamera(),
             new ResizeObserver(() => this.resize()).observe(t),
@@ -1674,25 +1740,39 @@ ${o}
             this.controls.update(),
             this.resize());
         }
-        captureJpeg(t = 0.92) {
-          const e = this.scene.background,
-            i = this.scene.getObjectByName("drafting-grid"),
-            r = i?.visible,
-            s = this.camera.position.clone(),
-            o = this.controls.target.clone(),
-            a = this.camera.zoom;
-          ((this.scene.background = new kt(16382972)), i && (i.visible = !1));
-          const c = new Jn().setFromObject(this.object);
-          if (c.isEmpty())
-            ((this.camera.zoom = a), this.camera.updateProjectionMatrix());
-          else {
-            const d = c.getBoundingSphere(new lr()),
-              f = s.clone().sub(o).normalize(),
-              u = Math.max(s.distanceTo(o), d.radius * 3);
-            (this.controls.target.copy(d.center),
-              this.camera.position.copy(d.center).addScaledVector(f, u),
+        captureJpeg(t = 0.92, e = 900, i = 560) {
+          const r = this.scene.background,
+            s = this.scene.getObjectByName("drafting-grid"),
+            o = s?.visible,
+            a = this.camera.position.clone(),
+            c = this.controls.target.clone(),
+            l = this.camera.zoom,
+            h = {
+              left: this.camera.left,
+              right: this.camera.right,
+              top: this.camera.top,
+              bottom: this.camera.bottom,
+            },
+            d = this.renderer.getSize(new O());
+          this.renderer.setSize(e, i, !1);
+          const f = e / i,
+            u = Math.max(this.size * 0.7, 6.8);
+          ((this.camera.left = -u * f),
+            (this.camera.right = u * f),
+            (this.camera.top = u),
+            (this.camera.bottom = -u),
+            this.camera.updateProjectionMatrix(),
+            (this.scene.background = new kt(16382972)),
+            s && (s.visible = !1));
+          const g = new Jn().setFromObject(this.object);
+          if (!g.isEmpty()) {
+            const m = g.getBoundingSphere(new lr()),
+              p = a.clone().sub(c).normalize(),
+              b = Math.max(a.distanceTo(c), m.radius * 3);
+            (this.controls.target.copy(m.center),
+              this.camera.position.copy(m.center).addScaledVector(p, b),
               (this.camera.zoom = el.clamp(
-                this.camera.top / Math.max(d.radius * 1.22, 0.1),
+                this.camera.top / Math.max(m.radius * 1.22, 0.1),
                 0.1,
                 10,
               )),
@@ -1700,21 +1780,29 @@ ${o}
               this.controls.update());
           }
           this.renderer.render(this.scene, this.camera);
-          const l = this.canvas.toDataURL("image/jpeg", t);
-          ((this.scene.background = e),
-            i && r !== void 0 && (i.visible = r),
-            (this.camera.zoom = a),
+          const M = this.canvas.toDataURL("image/jpeg", t),
+            m = atob(M.split(",")[1]),
+            p = {
+              bytes: Uint8Array.from(m, (b) => b.charCodeAt(0)),
+              width: this.canvas.width,
+              height: this.canvas.height,
+            };
+          return (
+            (this.scene.background = r),
+            s && o !== void 0 && (s.visible = o),
+            (this.camera.zoom = l),
+            (this.camera.left = h.left),
+            (this.camera.right = h.right),
+            (this.camera.top = h.top),
+            (this.camera.bottom = h.bottom),
             this.camera.updateProjectionMatrix(),
-            this.camera.position.copy(s),
-            this.controls.target.copy(o),
+            this.camera.position.copy(a),
+            this.controls.target.copy(c),
             this.controls.update(),
-            this.renderer.render(this.scene, this.camera));
-          const h = atob(l.split(",")[1]);
-          return {
-            bytes: Uint8Array.from(h, (d) => d.charCodeAt(0)),
-            width: this.canvas.width,
-            height: this.canvas.height,
-          };
+            this.renderer.setSize(d.x, d.y, !1),
+            this.renderer.render(this.scene, this.camera),
+            p
+          );
         }
         setupScene() {
           this.scene.add(new td(16777215, 12767704, 2.1));
@@ -1931,6 +2019,8 @@ ${o}
             "desktop-mode",
             n === "desktop",
           ),
+          (Xn.controls.enableZoom = n !== "desktop"),
+          (vi.controls.enableZoom = n !== "desktop"),
           t && localStorage.setItem(Il, n),
           n === "mobile" && zl("front"));
       }
@@ -4312,9 +4402,6 @@ ${o}
             </header>
             <div id="model-viewer" class="viewer">
               <canvas aria-label="Modelo 3D girável com o mouse"></canvas>
-              <div class="mouse-hint">
-                <span>↔</span> Arraste para girar · roda para zoom
-              </div>
             </div>
             <footer>
               <span id="voxel-count">0 células sólidas</span
