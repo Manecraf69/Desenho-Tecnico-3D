@@ -1,0 +1,4360 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0e3654" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='10 5 44 54'%3E%3Cpath d='M32 9 51 20v23L32 55 13 44V21Z' fill='none' stroke='%23eaf8fc' stroke-width='3.5' stroke-linejoin='round'/%3E%3Cpath d='m13 21 19 11 19-12M32 32v23' fill='none' stroke='%2310a2d0' stroke-width='3.5' stroke-linejoin='round'/%3E%3Cpath d='m23 27 9-5 9 5-9 5Z' fill='%23f2a51a' stroke='%230d3858' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+    <meta
+      name="description"
+      content="Editor de projeções ortográficas em primeiro diedro com reconstrução 3D instantânea."
+    />
+    <title>Traço 3D — Desenho Técnico</title>
+    <script>
+      (() => {
+        const savedTheme = localStorage.getItem("traco-3d-theme");
+        document.documentElement.dataset.theme =
+          savedTheme === "light" ? "light" : "dark";
+      })();
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.179.0/build/three.module.js"
+        }
+      }
+    </script>
+    <script type="module">
+      import {
+        Box3,
+        BufferGeometry,
+        Color,
+        DirectionalLight,
+        EdgesGeometry,
+        Float32BufferAttribute,
+        Group,
+        GridHelper,
+        HemisphereLight,
+        LineBasicMaterial,
+        LineSegments,
+        MathUtils,
+        Matrix4,
+        MOUSE,
+        Mesh,
+        MeshStandardMaterial,
+        OrthographicCamera,
+        Scene,
+        ShapeUtils,
+        Sphere,
+        SRGBColorSpace,
+        Vector2,
+        Vector3,
+        WebGLRenderer,
+      } from "three";
+      import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.179.0/examples/jsm/controls/OrbitControls.js";
+      import {
+        mergeGeometries,
+        mergeVertices,
+      } from "https://cdn.jsdelivr.net/npm/three@0.179.0/examples/jsm/utils/BufferGeometryUtils.js";
+
+      // Aliases mantidos para preservar a lógica original do projeto.
+      const O = Vector3;
+      const Ut = Vector2;
+      const de = Matrix4;
+      const Jn = Box3;
+      const kt = Color;
+      const aa = LineBasicMaterial;
+      const ca = LineSegments;
+      const Ku = MeshStandardMaterial;
+      const Ke = Mesh;
+      const Lu = EdgesGeometry;
+      const lr = Sphere;
+      const Ae = BufferGeometry;
+      const ye = Float32BufferAttribute;
+      const la = ShapeUtils;
+      const Xg = mergeGeometries;
+      const Yg = mergeVertices;
+      const Wg = WebGLRenderer;
+      const wu = Scene;
+      const ha = OrthographicCamera;
+      const id = DirectionalLight;
+      const td = HemisphereLight;
+      const sd = GridHelper;
+      const Si = Group;
+      const el = MathUtils;
+      const M_ = OrbitControls;
+      const Be = SRGBColorSpace;
+      const ce = { x: 10, y: 10, z: 10 },
+        sn = 2,
+        Zs = 1 / sn,
+        be = { x: ce.x * sn, y: ce.y * sn, z: ce.z * sn };
+      function Tl(n, t, e) {
+        return Array.from({ length: be.x }, (r, s) =>
+          Array.from({ length: be.y }, (o, a) =>
+            Array.from(
+              { length: be.z },
+              (c, l) =>
+                !!(n[be.z - 1 - l]?.[s] && t[a]?.[s] && e[be.z - 1 - l]?.[a]),
+            ),
+          ),
+        );
+      }
+      function qg(n, t, e, i) {
+        const r = Tl(t, e, i),
+          s = n.front.segments.filter(
+            (u) => u.type === "visible" && u.x1 !== u.x2 && u.y1 !== u.y2,
+          ),
+          o = n.side.segments.filter(
+            (u) => u.type === "visible" && u.x1 !== u.x2 && u.y1 !== u.y2,
+          ),
+          a = n.top.segments.flatMap((u) => [
+            { x: u.x1, y: u.y1 },
+            { x: u.x2, y: u.y2 },
+          ]),
+          c = Math.min(...a.map((u) => u.x)),
+          l = Math.max(...a.map((u) => u.x)),
+          h = n.top.segments.filter(
+            (u) =>
+              u.type === "visible" &&
+              (u.x1 !== u.x2 || (u.y1 !== 3 && u.y1 !== 7)),
+          ),
+          d =
+            h.length > 0
+              ? Math.min(...h.flatMap((u) => [u.y1, u.y2]))
+              : Math.min(...n.top.segments.flatMap((u) => [u.y1, u.y2])),
+          f =
+            h.length > 0
+              ? Math.max(...h.flatMap((u) => [u.y1, u.y2]))
+              : Math.max(...n.top.segments.flatMap((u) => [u.y1, u.y2]));
+        for (const u of s) {
+          const g = Math.min(u.x1, u.x2),
+            M = Math.max(u.x1, u.x2);
+          for (let m = 0; m < be.x; m += 1) {
+            const p = (m + 0.5) / sn;
+            if (p < g || p > M) continue;
+            const b = (p - u.x1) / (u.x2 - u.x1),
+              E = u.y1 + (u.y2 - u.y1) * b;
+            for (let v = 0; v < be.y; v += 1) {
+              const R = (v + 0.5) / sn;
+              if (!(R < d || R > f))
+                for (let T = 0; T < be.z; T += 1)
+                  (be.z - T - 0.5) / sn < E && (r[m][v][T] = !1);
+            }
+          }
+        }
+        for (const u of o) {
+          const g = Math.min(u.x1, u.x2),
+            M = Math.max(u.x1, u.x2);
+          for (let m = 0; m < be.y; m += 1) {
+            const p = (m + 0.5) / sn;
+            if (p < g || p > M) continue;
+            const b = (p - u.x1) / (u.x2 - u.x1),
+              E = u.y1 + (u.y2 - u.y1) * b;
+            for (let v = 0; v < be.x; v += 1) {
+              const R = (v + 0.5) / sn;
+              if (!(R < c || R > l))
+                for (let T = 0; T < be.z; T += 1)
+                  (be.z - T - 0.5) / sn < E && (r[v][m][T] = !1);
+            }
+          }
+        }
+        return r;
+      }
+      function bl(n) {
+        const t = [],
+          e = [];
+        let i = 0,
+          r = 0;
+        const s = [
+            {
+              delta: [1, 0, 0],
+              normal: [1, 0, 0],
+              corners: [
+                [1, 0, 0],
+                [1, 1, 0],
+                [1, 1, 1],
+                [1, 0, 1],
+              ],
+            },
+            {
+              delta: [-1, 0, 0],
+              normal: [-1, 0, 0],
+              corners: [
+                [0, 1, 0],
+                [0, 0, 0],
+                [0, 0, 1],
+                [0, 1, 1],
+              ],
+            },
+            {
+              delta: [0, 1, 0],
+              normal: [0, 0, -1],
+              corners: [
+                [1, 1, 0],
+                [0, 1, 0],
+                [0, 1, 1],
+                [1, 1, 1],
+              ],
+            },
+            {
+              delta: [0, -1, 0],
+              normal: [0, 0, 1],
+              corners: [
+                [0, 0, 0],
+                [1, 0, 0],
+                [1, 0, 1],
+                [0, 0, 1],
+              ],
+            },
+            {
+              delta: [0, 0, 1],
+              normal: [0, 1, 0],
+              corners: [
+                [0, 0, 1],
+                [1, 0, 1],
+                [1, 1, 1],
+                [0, 1, 1],
+              ],
+            },
+            {
+              delta: [0, 0, -1],
+              normal: [0, -1, 0],
+              corners: [
+                [0, 1, 0],
+                [1, 1, 0],
+                [1, 0, 0],
+                [0, 0, 0],
+              ],
+            },
+          ],
+          o = [0, 1, 2, 0, 2, 3];
+        for (let l = 0; l < be.x; l += 1)
+          for (let h = 0; h < be.y; h += 1)
+            for (let d = 0; d < be.z; d += 1)
+              if (n[l]?.[h]?.[d]) {
+                i += 1;
+                for (const f of s) {
+                  const u = l + f.delta[0],
+                    g = h + f.delta[1],
+                    M = d + f.delta[2];
+                  if (!t_(n, u, g, M)) {
+                    r += 1;
+                    for (const m of o) {
+                      const p = f.corners[m];
+                      (t.push(
+                        (l + p[0]) * Zs - ce.x / 2,
+                        (d + p[2]) * Zs,
+                        ce.y / 2 - (h + p[1]) * Zs,
+                      ),
+                        e.push(...f.normal));
+                    }
+                  }
+                }
+              }
+        const a = new Ae();
+        (a.setAttribute("position", new ye(t, 3)),
+          a.setAttribute("normal", new ye(e, 3)));
+        const c = t.length > 0 ? Yg(a, 1e-4) : a;
+        return (
+          c.computeBoundingBox(),
+          c.computeBoundingSphere(),
+          { geometry: c, stats: { voxels: i, faces: r } }
+        );
+      }
+      function jg(n, t) {
+        const e = bl(n),
+          i = [],
+          r = t.top.segments.flatMap((h) => [
+            { x: h.x1, y: h.y1 },
+            { x: h.x2, y: h.y2 },
+          ]),
+          s = Math.min(...r.map((h) => h.y)),
+          o = Math.max(...r.map((h) => h.y)),
+          a = Math.min(...r.map((h) => h.x)),
+          c = Math.max(...r.map((h) => h.x));
+        for (const h of t.front.segments)
+          h.type !== "visible" ||
+            h.x1 === h.x2 ||
+            h.y1 === h.y2 ||
+            i.push(Kg(h, s, o));
+        for (const h of t.side.segments)
+          h.type !== "visible" ||
+            h.x1 === h.x2 ||
+            h.y1 === h.y2 ||
+            i.push(Jg(h, a, c));
+        if (i.length === 0) return e;
+        const l = Xg([e.geometry, ...i], !1);
+        return l
+          ? (e.geometry.dispose(),
+            i.forEach((h) => h.dispose()),
+            l.computeBoundingBox(),
+            l.computeBoundingSphere(),
+            {
+              geometry: l,
+              stats: { ...e.stats, faces: e.stats.faces + i.length },
+            })
+          : (i.forEach((h) => h.dispose()), e);
+      }
+      function $g(n) {
+        const t = n.front.segments.filter((D) => D.type === "visible").map(tn),
+          e = n.top.segments.filter((D) => D.type === "visible").map(tn),
+          i = n.side.segments.filter((D) => D.type === "visible").map(tn),
+          r = t
+            .filter((D) => D.x1 !== D.x2 && D.y1 !== D.y2)
+            .sort(
+              (D, q) =>
+                Math.hypot(q.x2 - q.x1, q.y2 - q.y1) -
+                Math.hypot(D.x2 - D.x1, D.y2 - D.y1),
+            )[0];
+        if (!r) return null;
+        const s = e.flatMap((D) => [
+            { x: D.x1, y: D.y1 },
+            { x: D.x2, y: D.y2 },
+          ]),
+          o = Math.min(...s.map((D) => D.x)),
+          a = Math.max(...s.map((D) => D.x)),
+          c = Math.min(...s.map((D) => D.y)),
+          l = Math.max(...s.map((D) => D.y));
+        if (
+          !Number.isFinite(o) ||
+          o === a ||
+          c === l ||
+          !se(e, o, c, a, c) ||
+          !se(e, o, l, a, l) ||
+          !se(e, o, c, o, l) ||
+          !se(e, a, c, a, l)
+        )
+          return null;
+        const h = r.y1 < r.y2 ? { x: r.x1, row: r.y1 } : { x: r.x2, row: r.y2 },
+          d = r.y1 > r.y2 ? { x: r.x1, row: r.y1 } : { x: r.x2, row: r.y2 },
+          f = t.find(
+            (D) => D.y1 === D.y2 && D.y1 > h.row && D.y1 < d.row && D.x2 === a,
+          );
+        if (!f) return null;
+        const u = e.find(
+            (D) =>
+              D.y1 === D.y2 &&
+              D.x1 === o &&
+              D.x2 === h.x &&
+              D.y1 > c &&
+              D.y1 < l,
+          )?.y1,
+          g = e.find(
+            (D) =>
+              D.y1 === D.y2 &&
+              D.x1 === f.x1 &&
+              D.x2 === a &&
+              D.y1 > (u ?? c) &&
+              D.y1 < l,
+          )?.y1;
+        if (
+          u === void 0 ||
+          g === void 0 ||
+          !se(e, h.x, u, h.x, g) ||
+          !se(e, f.x1, g, f.x1, l) ||
+          !se(e, d.x, u, d.x, l) ||
+          !se(i, c, h.row, g, h.row) ||
+          !se(i, u, h.row, u, d.row) ||
+          !se(i, u, d.row, l, d.row) ||
+          !se(i, g, h.row, g, f.y1) ||
+          !se(i, g, f.y1, l, f.y1)
+        )
+          return null;
+        const M = Math.max(...t.flatMap((D) => [D.y1, D.y2])),
+          m = (D) => n.front.rows - D,
+          p = m(M),
+          b = m(h.row),
+          E = m(f.y1),
+          v = m(d.row);
+        if (!(p < v && v < E && E < b)) return null;
+        const R = [],
+          T = (D, q, k) => new O(D - ce.x / 2, k, ce.y / 2 - q),
+          C = (D, q, k) => {
+            R.push(D.x, D.y, D.z, q.x, q.y, q.z, k.x, k.y, k.z);
+          },
+          I = (D, q, k, it) => {
+            (C(D, q, k), C(D, k, it));
+          },
+          y = (D, q, k, it, ct) =>
+            I(
+              T(D, k, ct(D, k)),
+              T(q, k, ct(q, k)),
+              T(q, it, ct(q, it)),
+              T(D, it, ct(D, it)),
+            ),
+          _ = () => b,
+          w = () => E,
+          V = () => v,
+          L = (D) => v + ((D - d.x) / (h.x - d.x)) * (b - v);
+        (y(o, h.x, c, u, _),
+          y(h.x, a, c, u, _),
+          y(h.x, a, u, g, _),
+          y(o, d.x, u, l, V),
+          y(d.x, f.x1, u, g, L),
+          y(f.x1, h.x, u, g, L),
+          y(d.x, f.x1, g, l, L),
+          y(f.x1, a, g, l, w),
+          I(T(d.x, u, v), T(o, u, v), T(o, u, b), T(d.x, u, b)),
+          C(T(h.x, u, b), T(d.x, u, v), T(d.x, u, b)),
+          I(T(a, g, E), T(h.x, g, E), T(h.x, g, b), T(a, g, b)),
+          C(T(h.x, g, E), T(f.x1, g, E), T(h.x, g, b)),
+          I(T(o, c, p), T(a, c, p), T(a, c, b), T(o, c, b)),
+          I(T(a, c, p), T(a, g, p), T(a, g, b), T(a, c, b)),
+          I(T(a, g, p), T(a, l, p), T(a, l, E), T(a, g, E)),
+          I(T(o, u, p), T(o, c, p), T(o, c, v), T(o, u, v)),
+          I(T(o, u, v), T(o, c, v), T(o, c, b), T(o, u, b)),
+          I(T(o, l, p), T(o, u, p), T(o, u, v), T(o, l, v)),
+          I(T(d.x, l, p), T(o, l, p), T(o, l, v), T(d.x, l, v)),
+          I(T(f.x1, l, p), T(d.x, l, p), T(d.x, l, v), T(f.x1, l, E)),
+          I(T(a, l, p), T(f.x1, l, p), T(f.x1, l, E), T(a, l, E)),
+          I(T(o, c, p), T(o, l, p), T(a, l, p), T(a, c, p)));
+        const H = new Ae();
+        (H.setAttribute("position", new ye(R, 3)),
+          H.computeVertexNormals(),
+          H.computeBoundingBox(),
+          H.computeBoundingSphere(),
+          (H.userData.modelKind = "chamfered-channel"));
+        const W = new Set();
+        for (let D = 0; D < R.length; D += 3)
+          W.add(`${R[D]},${R[D + 1]},${R[D + 2]}`);
+        return {
+          geometry: H,
+          stats: { voxels: 0, faces: R.length / 9, vertices: W.size },
+        };
+      }
+      function Zg(n) {
+        const t = n.front.segments.filter((_) => _.type === "visible").map(tn),
+          e = n.top.segments.filter((_) => _.type === "visible").map(tn),
+          i = n.side.segments.filter((_) => _.type === "visible").map(tn),
+          r = e_(t);
+        if (
+          !r ||
+          r.length < 3 ||
+          !t.some((_) => _.x1 !== _.x2 && _.y1 !== _.y2)
+        )
+          return null;
+        let s = r;
+        const o = Math.min(...s.map((_) => _.x)),
+          a = Math.max(...s.map((_) => _.x)),
+          c = Math.min(...s.map((_) => _.row)),
+          l = Math.max(...s.map((_) => _.row)),
+          h = e.flatMap((_) => [
+            { x: _.x1, y: _.y1 },
+            { x: _.x2, y: _.y2 },
+          ]),
+          d = Math.min(...h.map((_) => _.x)),
+          f = Math.max(...h.map((_) => _.x)),
+          u = Math.min(...h.map((_) => _.y)),
+          g = Math.max(...h.map((_) => _.y));
+        if (
+          d !== o ||
+          f !== a ||
+          u === g ||
+          !se(e, d, u, f, u) ||
+          !se(e, d, g, f, g) ||
+          !se(e, d, u, d, g) ||
+          !se(e, f, u, f, g) ||
+          !se(i, u, c, u, l) ||
+          !se(i, g, c, g, l) ||
+          !wc(i, c, u, g) ||
+          !wc(i, l, u, g)
+        )
+          return null;
+        const M = (_) => n.front.rows - _;
+        s.reduce((_, w, V) => {
+          const L = s[(V + 1) % s.length];
+          return _ + w.x * M(L.row) - L.x * M(w.row);
+        }, 0) < 0 && (s = [...s].reverse());
+        const p = (_, w, V) => new O(_ - ce.x / 2, V, ce.y / 2 - w),
+          b = s.map((_) => ({ x: _.x, height: M(_.row) })),
+          E = b.map((_) => p(_.x, u, _.height)),
+          v = b.map((_) => p(_.x, g, _.height)),
+          R = [],
+          T = (_, w, V) => {
+            R.push(_.x, _.y, _.z, w.x, w.y, w.z, V.x, V.y, V.z);
+          },
+          C = (_, w, V, L) => {
+            (T(_, w, V), T(_, V, L));
+          },
+          I = la.triangulateShape(
+            b.map((_) => new Ut(_.x, _.height)),
+            [],
+          );
+        for (const [_, w, V] of I) {
+          let L = E[_],
+            H = E[w],
+            W = E[V];
+          (new O().subVectors(H, L).cross(new O().subVectors(W, L)).z < 0 &&
+            ([H, W] = [W, H]),
+            T(L, H, W),
+            T(v[_], v[V], v[w]));
+        }
+        for (let _ = 0; _ < E.length; _ += 1) {
+          const w = (_ + 1) % E.length;
+          C(E[_], v[_], v[w], E[w]);
+        }
+        const y = new Ae();
+        return (
+          y.setAttribute("position", new ye(R, 3)),
+          y.computeVertexNormals(),
+          y.computeBoundingBox(),
+          y.computeBoundingSphere(),
+          (y.userData.modelKind = "extruded-profile"),
+          {
+            geometry: y,
+            stats: {
+              voxels: 0,
+              faces: R.length / 9,
+              vertices: E.length + v.length,
+            },
+          }
+        );
+      }
+      function Kg(n, t, e) {
+        const i = (r, s, o) => new O(r - ce.x / 2, ce.z - s, ce.y / 2 - o);
+        return Al(
+          i(n.x1, n.y1, t),
+          i(n.x2, n.y2, t),
+          i(n.x2, n.y2, e),
+          i(n.x1, n.y1, e),
+        );
+      }
+      function Jg(n, t, e) {
+        const i = (r, s, o) => new O(o - ce.x / 2, ce.z - s, ce.y / 2 - r);
+        return Al(
+          i(n.x1, n.y1, t),
+          i(n.x2, n.y2, t),
+          i(n.x2, n.y2, e),
+          i(n.x1, n.y1, e),
+        );
+      }
+      function Al(n, t, e, i) {
+        const r = new Ae();
+        return (
+          r.setAttribute(
+            "position",
+            new ye(
+              [
+                n.x,
+                n.y,
+                n.z,
+                t.x,
+                t.y,
+                t.z,
+                e.x,
+                e.y,
+                e.z,
+                n.x,
+                n.y,
+                n.z,
+                e.x,
+                e.y,
+                e.z,
+                i.x,
+                i.y,
+                i.z,
+              ],
+              3,
+            ),
+          ),
+          r.computeVertexNormals(),
+          r
+        );
+      }
+      function Qg(n) {
+        const t = n.top.segments.filter((L) => L.type === "visible").map(tn),
+          e = n.front.segments.filter((L) => L.type === "visible").map(tn),
+          i = n.side.segments.filter((L) => L.type === "visible").map(tn);
+        if (t.length < 9 || e.length < 4 || i.length < 3) return null;
+        const r = t.flatMap((L) => [
+            { x: L.x1, y: L.y1 },
+            { x: L.x2, y: L.y2 },
+          ]),
+          s = Math.min(...r.map((L) => L.x)),
+          o = Math.max(...r.map((L) => L.x)),
+          a = Math.min(...r.map((L) => L.y)),
+          c = Math.max(...r.map((L) => L.y));
+        if (
+          s === o ||
+          a === c ||
+          ![
+            [s, a, o, a],
+            [s, c, o, c],
+            [s, a, s, c],
+            [o, a, o, c],
+          ].every(([L, H, W, D]) => se(t, L, H, W, D))
+        )
+          return null;
+        const h = t
+          .filter(
+            (L) =>
+              L.y1 === L.y2 && L.x1 > s && L.x2 < o && L.y1 > a && L.y1 < c,
+          )
+          .sort((L, H) => H.x2 - H.x1 - (L.x2 - L.x1))[0];
+        if (!h) return null;
+        const d = h.y1;
+        if (
+          ![
+            [s, a, h.x1, d],
+            [s, c, h.x1, d],
+            [o, a, h.x2, d],
+            [o, c, h.x2, d],
+          ].every(([L, H, W, D]) => se(t, L, H, W, D))
+        )
+          return null;
+        const u = e.find((L) => L.y1 === L.y2 && L.x1 === s && L.x2 === o),
+          g = e.find((L) => L.y1 === L.y2 && L.x1 === h.x1 && L.x2 === h.x2);
+        if (
+          !u ||
+          !g ||
+          g.y1 >= u.y1 ||
+          !se(e, s, u.y1, h.x1, g.y1) ||
+          !se(e, h.x2, g.y1, o, u.y1)
+        )
+          return null;
+        const M = i.find((L) => L.y1 === L.y2 && L.x1 === a && L.x2 === c);
+        if (
+          !M ||
+          !se(i, a, M.y1, d, g.y1) ||
+          !se(i, d, g.y1, c, M.y1) ||
+          M.y1 !== u.y1
+        )
+          return null;
+        const m = n.front.rows - u.y1,
+          p = n.front.rows - g.y1,
+          b = (L, H, W) => new O(L - ce.x / 2, W, ce.y / 2 - H),
+          E = b(s, a, m),
+          v = b(o, a, m),
+          R = b(o, c, m),
+          T = b(s, c, m),
+          C = b(h.x1, d, p),
+          I = b(h.x2, d, p),
+          y = [],
+          _ = (L, H, W) => {
+            y.push(L.x, L.y, L.z, H.x, H.y, H.z, W.x, W.y, W.z);
+          },
+          w = (L, H, W, D) => {
+            (_(L, H, W), _(L, W, D));
+          };
+        (w(E, v, I, C), w(R, T, C, I), _(T, E, C), _(v, R, I), w(E, T, R, v));
+        const V = new Ae();
+        return (
+          V.setAttribute("position", new ye(y, 3)),
+          V.computeVertexNormals(),
+          V.computeBoundingBox(),
+          V.computeBoundingSphere(),
+          (V.userData.modelKind = "hip-roof"),
+          { geometry: V, stats: { voxels: 0, faces: 4, vertices: 6 } }
+        );
+      }
+      function wl() {
+        const n = (t, e, i, r, s = "visible") => ({
+          id: crypto.randomUUID(),
+          x1: t,
+          y1: e,
+          x2: i,
+          y2: r,
+          type: s,
+        });
+        return {
+          front: {
+            cols: 10,
+            rows: 10,
+            segments: [
+              n(2, 3, 3, 3),
+              n(2, 3, 2, 6),
+              n(3, 3, 3, 4),
+              n(3, 4, 4, 4),
+              n(4, 2, 4, 4),
+              n(4, 2, 7, 2),
+              n(7, 2, 7, 6),
+              n(6, 6, 7, 6),
+              n(6, 5.5, 6, 6),
+              n(5, 5.5, 5, 6),
+              n(5, 5.5, 6, 5.5),
+              n(2, 6, 5, 6),
+              n(2, 5, 7, 5),
+            ],
+          },
+          top: {
+            cols: 10,
+            rows: 10,
+            segments: [
+              n(2, 4, 2, 7),
+              n(7, 4, 7, 7),
+              n(2, 7, 7, 7),
+              n(2, 4, 7, 4),
+              n(3, 4, 3, 5),
+              n(4, 4, 4, 5),
+              n(2, 5, 7, 5),
+              n(5, 4, 5, 7, "hidden"),
+              n(6, 4, 6, 7, "hidden"),
+            ],
+          },
+          side: {
+            cols: 10,
+            rows: 10,
+            segments: [
+              n(4, 2, 4, 6),
+              n(4, 2, 5, 2),
+              n(4, 6, 7, 6),
+              n(7, 5, 7, 6),
+              n(5, 5, 7, 5),
+              n(5, 2, 5, 5),
+              n(4, 3, 5, 3),
+              n(4, 4, 5, 4, "hidden"),
+              n(4, 5.5, 7, 5.5, "hidden"),
+            ],
+          },
+        };
+      }
+      function t_(n, t, e, i) {
+        return !!n[t]?.[e]?.[i];
+      }
+      function tn(n) {
+        return n.x1 > n.x2 || (n.x1 === n.x2 && n.y1 > n.y2)
+          ? { ...n, x1: n.x2, y1: n.y2, x2: n.x1, y2: n.y1 }
+          : n;
+      }
+      function se(n, t, e, i, r) {
+        const s = tn({ id: "", type: "visible", x1: t, y1: e, x2: i, y2: r });
+        return n.some((o) => {
+          const a = tn(o);
+          return (
+            a.x1 === s.x1 && a.y1 === s.y1 && a.x2 === s.x2 && a.y2 === s.y2
+          );
+        });
+      }
+      function wc(n, t, e, i) {
+        const r = n
+          .filter((o) => o.y1 === t && o.y2 === t && o.x2 > e && o.x1 < i)
+          .map((o) => [Math.max(e, o.x1), Math.min(i, o.x2)])
+          .sort((o, a) => o[0] - a[0]);
+        let s = e;
+        for (const [o, a] of r) {
+          if (o > s) return !1;
+          if (((s = Math.max(s, a)), s >= i)) return !0;
+        }
+        return !1;
+      }
+      function e_(n) {
+        if (n.length < 3) return null;
+        const t = (a) => `${a.x},${a.row}`,
+          e = new Map();
+        for (const a of n) {
+          const c = { x: a.x1, row: a.y1 },
+            l = { x: a.x2, row: a.y2 };
+          (e.set(t(c), [...(e.get(t(c)) ?? []), { point: l, segment: a }]),
+            e.set(t(l), [...(e.get(t(l)) ?? []), { point: c, segment: a }]));
+        }
+        if ([...e.values()].some((a) => a.length !== 2)) return null;
+        const i = { x: n[0].x1, row: n[0].y1 },
+          r = [i],
+          s = new Set();
+        let o = i;
+        for (let a = 0; a <= n.length; a += 1) {
+          const c = (e.get(t(o)) ?? []).find((l) => !s.has(l.segment.id));
+          if (!c) return null;
+          if ((s.add(c.segment.id), (o = c.point), t(o) === t(i))) break;
+          r.push(o);
+        }
+        return s.size === n.length && t(o) === t(i) ? r : null;
+      }
+      const n_ = "http://www.w3.org/2000/svg",
+        $e = 2;
+      class i_ {
+        cols;
+        rows;
+        svg;
+        getTool;
+        onBeforeChange;
+        onChange;
+        segments = [];
+        start = null;
+        current = null;
+        pointerId = null;
+        activePointers = new Map();
+        pinchStart = null;
+        gestureActive = !1;
+        viewBox;
+        showFill = !0;
+        showCoordinates = !0;
+        halfStep = !1;
+        mask;
+        constructor(t) {
+          ((this.svg = t.svg),
+            (this.cols = t.cols),
+            (this.rows = t.rows),
+            (this.getTool = t.getTool),
+            (this.onBeforeChange = t.onBeforeChange),
+            (this.onChange = t.onChange),
+            (this.mask = l_(this.cols, this.rows)),
+            (this.viewBox = [-0.8, -0.8, this.cols + 1.6, this.rows + 1.6]),
+            this.applyViewBox(),
+            this.svg.setAttribute("preserveAspectRatio", "xMidYMid meet"),
+            this.bindEvents(),
+            this.render());
+        }
+        getState() {
+          return {
+            cols: this.cols,
+            rows: this.rows,
+            segments: this.segments.map((t) => ({ ...t })),
+          };
+        }
+        setState(t, e = !1) {
+          ((this.segments = t.segments
+            .filter(
+              (i) =>
+                o_(i) &&
+                i.x1 >= 0 &&
+                i.x1 <= this.cols &&
+                i.x2 >= 0 &&
+                i.x2 <= this.cols &&
+                i.y1 >= 0 &&
+                i.y1 <= this.rows &&
+                i.y2 >= 0 &&
+                i.y2 <= this.rows,
+            )
+            .map((i) => ({ ...i, id: i.id || crypto.randomUUID() }))),
+            this.recompute(),
+            e && this.onChange());
+        }
+        clear() {
+          ((this.segments = []), this.recompute());
+        }
+        getMask() {
+          return this.mask.map((t) => [...t]);
+        }
+        setShowFill(t) {
+          ((this.showFill = t), this.render());
+        }
+        setShowCoordinates(t) {
+          ((this.showCoordinates = t), this.render());
+        }
+        bindEvents() {
+          (window.addEventListener("keydown", (e) => {
+            e.key !== "Shift" ||
+              this.halfStep ||
+              ((this.halfStep = !0), this.render());
+          }),
+            window.addEventListener("keyup", (e) => {
+              e.key !== "Shift" ||
+                !this.halfStep ||
+                ((this.halfStep = !1), this.render());
+            }),
+            window.addEventListener("blur", () => {
+              this.halfStep && ((this.halfStep = !1), this.render());
+            }),
+            this.svg.addEventListener("pointerdown", (e) => {
+              if (e.button === 0) {
+                if (
+                  (this.activePointers.set(e.pointerId, {
+                    x: e.clientX,
+                    y: e.clientY,
+                  }),
+                  this.activePointers.size >= 2)
+                ) {
+                  (this.cancelDrawing(),
+                    (this.gestureActive = !0),
+                    (this.pinchStart = this.getPinchState()),
+                    e.preventDefault());
+                  return;
+                }
+                this.getTool() !== "erase" &&
+                  (e.preventDefault(),
+                  (this.pointerId = e.pointerId),
+                  this.svg.setPointerCapture(e.pointerId),
+                  (this.start = this.snap(e)),
+                  (this.current = this.start),
+                  this.render());
+              }
+            }),
+            this.svg.addEventListener("pointermove", (e) => {
+              if (
+                (this.activePointers.has(e.pointerId) &&
+                  this.activePointers.set(e.pointerId, {
+                    x: e.clientX,
+                    y: e.clientY,
+                  }),
+                this.gestureActive &&
+                  this.activePointers.size >= 2 &&
+                  this.pinchStart)
+              ) {
+                (this.updatePinch(), e.preventDefault());
+                return;
+              }
+              this.pointerId !== e.pointerId ||
+                !this.start ||
+                ((this.current = this.snap(e)), this.render());
+            }));
+          const t = (e) => {
+            if ((this.activePointers.delete(e.pointerId), this.gestureActive)) {
+              (this.activePointers.size < 2 &&
+                ((this.gestureActive = !1), (this.pinchStart = null)),
+                e.preventDefault());
+              return;
+            }
+            if (this.pointerId !== e.pointerId || !this.start) return;
+            const i = this.snap(e);
+            ((i.x !== this.start.x || i.y !== this.start.y) &&
+              (this.onBeforeChange(),
+              this.addSegment(this.start, i, this.getTool()),
+              this.recompute(),
+              this.onChange()),
+              (this.start = null),
+              (this.current = null),
+              (this.pointerId = null),
+              this.render());
+          };
+          (this.svg.addEventListener("pointerup", t),
+            this.svg.addEventListener("pointercancel", (e) => {
+              if (
+                (this.activePointers.delete(e.pointerId), this.gestureActive)
+              ) {
+                ((this.gestureActive = !1), (this.pinchStart = null));
+                return;
+              }
+              this.pointerId === e.pointerId && this.cancelDrawing();
+            }));
+        }
+        cancelDrawing() {
+          ((this.start = null),
+            (this.current = null),
+            (this.pointerId = null),
+            this.render());
+        }
+        getPinchState() {
+          const t = [...this.activePointers.values()],
+            e = t[0] ?? { x: 0, y: 0 },
+            i = t[1] ?? e;
+          return {
+            distance: Math.max(Math.hypot(i.x - e.x, i.y - e.y), 1),
+            midpoint: { x: (e.x + i.x) / 2, y: (e.y + i.y) / 2 },
+            viewBox: [...this.viewBox],
+          };
+        }
+        updatePinch() {
+          if (!this.pinchStart) return;
+          const t = this.getPinchState(),
+            e = this.pinchStart.distance / t.distance,
+            i = this.svg.getBoundingClientRect(),
+            r = Vr(this.pinchStart.viewBox[2] * e, 3, this.cols + 1.6),
+            s = Vr(this.pinchStart.viewBox[3] * e, 3, this.rows + 1.6),
+            o =
+              ((t.midpoint.x - this.pinchStart.midpoint.x) *
+                this.pinchStart.viewBox[2]) /
+              Math.max(i.width, 1),
+            a =
+              ((t.midpoint.y - this.pinchStart.midpoint.y) *
+                this.pinchStart.viewBox[3]) /
+              Math.max(i.height, 1);
+          ((this.viewBox = [
+            this.pinchStart.viewBox[0] - o,
+            this.pinchStart.viewBox[1] - a,
+            r,
+            s,
+          ]),
+            this.applyViewBox());
+        }
+        applyViewBox() {
+          this.svg.setAttribute("viewBox", this.viewBox.join(" "));
+        }
+        snap(t) {
+          const e = this.svg.createSVGPoint();
+          ((e.x = t.clientX), (e.y = t.clientY));
+          const i = this.svg.getScreenCTM();
+          if (!i) return { x: 0, y: 0 };
+          const r = e.matrixTransform(i.inverse()),
+            s = t.shiftKey ? 0.5 : 1;
+          return {
+            x: Vr(Math.round(r.x / s) * s, 0, this.cols),
+            y: Vr(Math.round(r.y / s) * s, 0, this.rows),
+          };
+        }
+        addSegment(t, e, i) {
+          const r = cs({
+            id: crypto.randomUUID(),
+            x1: t.x,
+            y1: t.y,
+            x2: e.x,
+            y2: e.y,
+            type: i,
+          });
+          ((this.segments = this.segments.filter((s) => !s_(s, r))),
+            this.segments.push(r));
+        }
+        removeSegment(t) {
+          (this.onBeforeChange(),
+            (this.segments = this.segments.filter((e) => e.id !== t)),
+            this.recompute(),
+            this.onChange());
+        }
+        recompute() {
+          ((this.mask = r_(this.cols, this.rows, this.segments)),
+            this.render());
+        }
+        render() {
+          if (
+            (this.svg.replaceChildren(),
+            this.svg.append(
+              this.createRect("grid-background", 0, 0, this.cols, this.rows),
+            ),
+            this.showFill)
+          ) {
+            const i = qe("g");
+            i.setAttribute("aria-hidden", "true");
+            for (let r = 0; r < this.mask.length; r += 1)
+              for (let s = 0; s < (this.mask[r]?.length ?? 0); s += 1)
+                this.mask[r][s] &&
+                  i.append(
+                    this.createRect(
+                      "solid-cell",
+                      s / $e,
+                      r / $e,
+                      1 / $e,
+                      1 / $e,
+                    ),
+                  );
+            this.svg.append(i);
+          }
+          const t = qe("g");
+          if ((t.setAttribute("aria-hidden", "true"), this.halfStep)) {
+            for (let i = 0.5; i < this.cols; i += 1)
+              t.append(this.createLine("grid-half", i, 0, i, this.rows));
+            for (let i = 0.5; i < this.rows; i += 1)
+              t.append(this.createLine("grid-half", 0, i, this.cols, i));
+          }
+          for (let i = 0; i <= this.cols; i += 1)
+            t.append(
+              this.createLine(
+                i % 5 === 0 ? "grid-major" : "grid-minor",
+                i,
+                0,
+                i,
+                this.rows,
+              ),
+            );
+          for (let i = 0; i <= this.rows; i += 1)
+            t.append(
+              this.createLine(
+                i % 5 === 0 ? "grid-major" : "grid-minor",
+                0,
+                i,
+                this.cols,
+                i,
+              ),
+            );
+          (t.append(this.createRect("grid-border", 0, 0, this.cols, this.rows)),
+            this.svg.append(t),
+            this.showCoordinates && this.renderCoordinates());
+          const e = qe("g");
+          for (const i of this.segments) {
+            const r = qe("g");
+            (r.setAttribute("role", "button"),
+              r.setAttribute(
+                "aria-label",
+                `Linha ${i.type === "visible" ? "visível" : "oculta"}`,
+              ));
+            const s = this.createLine("line-hit", i.x1, i.y1, i.x2, i.y2),
+              o = this.createLine(
+                `technical-line ${i.type}`,
+                i.x1,
+                i.y1,
+                i.x2,
+                i.y2,
+              ),
+              a = (c) => {
+                this.getTool() === "erase" &&
+                  (c.stopPropagation(), this.removeSegment(i.id));
+              };
+            (s.addEventListener("pointerdown", a),
+              o.addEventListener("pointerdown", a),
+              r.append(s, o),
+              e.append(r));
+          }
+          if ((this.svg.append(e), this.start && this.current)) {
+            this.svg.append(
+              this.createLine(
+                "preview-line",
+                this.start.x,
+                this.start.y,
+                this.current.x,
+                this.current.y,
+              ),
+            );
+            const i = qe("circle");
+            (i.setAttribute("class", "snap-point"),
+              i.setAttribute("cx", String(this.current.x)),
+              i.setAttribute("cy", String(this.current.y)),
+              i.setAttribute("r", "0.14"),
+              this.svg.append(i));
+          }
+          if (this.segments.length === 0) {
+            const i = qe("text");
+            (i.setAttribute("class", "empty-note"),
+              i.setAttribute("x", String(this.cols / 2)),
+              i.setAttribute("y", String(this.rows / 2)),
+              (i.textContent = "ARRASTE PARA DESENHAR"),
+              this.svg.append(i));
+          }
+        }
+        renderCoordinates() {
+          const t = qe("g");
+          t.setAttribute("aria-hidden", "true");
+          for (let e = 0; e <= this.cols; e += 1) {
+            const i = qe("text");
+            (i.setAttribute("class", "coordinate-label"),
+              i.setAttribute("x", String(e)),
+              i.setAttribute("y", "-0.24"),
+              i.setAttribute("text-anchor", "middle"),
+              (i.textContent = String(e)),
+              t.append(i));
+          }
+          for (let e = 0; e <= this.rows; e += 1) {
+            const i = qe("text");
+            (i.setAttribute("class", "coordinate-label"),
+              i.setAttribute("x", "-0.25"),
+              i.setAttribute("y", String(e + 0.08)),
+              i.setAttribute("text-anchor", "end"),
+              (i.textContent = String(e)),
+              t.append(i));
+          }
+          this.svg.append(t);
+        }
+        createLine(t, e, i, r, s) {
+          const o = qe("line");
+          return (
+            o.setAttribute("class", t),
+            o.setAttribute("x1", String(e)),
+            o.setAttribute("y1", String(i)),
+            o.setAttribute("x2", String(r)),
+            o.setAttribute("y2", String(s)),
+            o
+          );
+        }
+        createRect(t, e, i, r, s) {
+          const o = qe("rect");
+          return (
+            o.setAttribute("class", t),
+            o.setAttribute("x", String(e)),
+            o.setAttribute("y", String(i)),
+            o.setAttribute("width", String(r)),
+            o.setAttribute("height", String(s)),
+            o
+          );
+        }
+      }
+      function r_(n, t, e) {
+        const i = n * $e,
+          r = t * $e,
+          s = e.map((f) => ({
+            ...f,
+            x1: Math.round(f.x1 * $e),
+            y1: Math.round(f.y1 * $e),
+            x2: Math.round(f.x2 * $e),
+            y2: Math.round(f.y2 * $e),
+          })),
+          o = Array.from({ length: r }, () => Array(i + 1).fill(!1)),
+          a = Array.from({ length: r + 1 }, () => Array(i).fill(!1));
+        for (const f of s.filter((u) => u.type === "visible")) {
+          const u = cs(f);
+          if (u.x1 === u.x2)
+            for (let g = u.y1; g < u.y2; g += 1)
+              g >= 0 && g < r && u.x1 >= 0 && u.x1 <= i && (o[g][u.x1] = !0);
+          else if (u.y1 === u.y2)
+            for (let g = u.x1; g < u.x2; g += 1)
+              g >= 0 && g < i && u.y1 >= 0 && u.y1 <= r && (a[u.y1][g] = !0);
+        }
+        const c = Array.from({ length: r }, () => Array(i).fill(!1)),
+          l = [],
+          h = (f, u) => {
+            f < 0 ||
+              f >= i ||
+              u < 0 ||
+              u >= r ||
+              c[u][f] ||
+              ((c[u][f] = !0), l.push({ x: f, y: u }));
+          };
+        for (let f = 0; f < i; f += 1)
+          (a[0][f] || h(f, 0), a[r][f] || h(f, r - 1));
+        for (let f = 0; f < r; f += 1)
+          (o[f][0] || h(0, f), o[f][i] || h(i - 1, f));
+        for (let f = 0; f < l.length; f += 1) {
+          const { x: u, y: g } = l[f];
+          (u > 0 && !o[g][u] && h(u - 1, g),
+            u < i - 1 && !o[g][u + 1] && h(u + 1, g),
+            g > 0 && !a[g][u] && h(u, g - 1),
+            g < r - 1 && !a[g + 1][u] && h(u, g + 1));
+        }
+        const d = c.map((f) => f.map((u) => !u));
+        for (const f of a_(s.filter((u) => u.type === "visible")))
+          for (let u = 0; u < r; u += 1)
+            for (let g = 0; g < i; g += 1)
+              c_({ x: g + 0.5, y: u + 0.5 }, f) && (d[u][g] = !0);
+        return d;
+      }
+      function cs(n) {
+        return n.x1 > n.x2 || (n.x1 === n.x2 && n.y1 > n.y2)
+          ? { ...n, x1: n.x2, y1: n.y2, x2: n.x1, y2: n.y1 }
+          : n;
+      }
+      function s_(n, t) {
+        const e = cs(n),
+          i = cs(t);
+        return e.x1 === i.x1 && e.y1 === i.y1 && e.x2 === i.x2 && e.y2 === i.y2;
+      }
+      function o_(n) {
+        return (
+          !!n &&
+          ["visible", "hidden"].includes(n.type) &&
+          Gr(n.x1) &&
+          Gr(n.y1) &&
+          Gr(n.x2) &&
+          Gr(n.y2) &&
+          (n.x1 !== n.x2 || n.y1 !== n.y2)
+        );
+      }
+      function Gr(n) {
+        return Number.isFinite(n) && Number.isInteger(n * $e);
+      }
+      function a_(n) {
+        const t = new Map(),
+          e = (o, a) => (a ? { x: o.x1, y: o.y1 } : { x: o.x2, y: o.y2 }),
+          i = (o) => `${o.x},${o.y}`;
+        for (const o of n) {
+          const a = e(o, !0),
+            c = e(o, !1);
+          (t.set(i(a), [...(t.get(i(a)) ?? []), { point: c, segment: o }]),
+            t.set(i(c), [...(t.get(i(c)) ?? []), { point: a, segment: o }]));
+        }
+        const r = new Set(),
+          s = [];
+        for (const o of n) {
+          if (r.has(o.id)) continue;
+          const a = [],
+            c = [o],
+            l = new Set();
+          for (; c.length > 0; ) {
+            const m = c.pop();
+            if (!l.has(m.id)) {
+              (l.add(m.id), a.push(m));
+              for (const p of [e(m, !0), e(m, !1)])
+                for (const b of t.get(i(p)) ?? []) c.push(b.segment);
+            }
+          }
+          l.forEach((m) => r.add(m));
+          const h = new Set(a.flatMap((m) => [i(e(m, !0)), i(e(m, !1))]));
+          if (
+            !(
+              a.length >= 3 &&
+              [...h].every(
+                (m) =>
+                  (t.get(m) ?? []).filter((p) => l.has(p.segment.id)).length ===
+                  2,
+              )
+            )
+          )
+            continue;
+          const f = e(a[0], !0),
+            u = [f];
+          let g = f,
+            M = "";
+          for (let m = 0; m <= a.length; m += 1) {
+            const p = (t.get(i(g)) ?? []).find(
+              (b) => l.has(b.segment.id) && b.segment.id !== M,
+            );
+            if (!p || ((M = p.segment.id), (g = p.point), i(g) === i(f))) break;
+            u.push(g);
+          }
+          u.length >= 3 && i(g) === i(f) && s.push(u);
+        }
+        return s;
+      }
+      function c_(n, t) {
+        let e = !1;
+        for (let i = 0, r = t.length - 1; i < t.length; r = i, i += 1) {
+          const s = t[i],
+            o = t[r];
+          s.y > n.y != o.y > n.y &&
+            n.x < ((o.x - s.x) * (n.y - s.y)) / (o.y - s.y) + s.x &&
+            (e = !e);
+        }
+        return e;
+      }
+      function l_(n, t) {
+        return Array.from({ length: t }, () => Array(n).fill(!1));
+      }
+      function Vr(n, t, e) {
+        return Math.max(t, Math.min(e, n));
+      }
+      function qe(n) {
+        return document.createElementNS(n_, n);
+      }
+      const qo = new TextEncoder();
+      function h_(n) {
+        const t = d_(n),
+          e = new Blob([t], { type: "application/pdf" }),
+          i = URL.createObjectURL(e),
+          r = document.createElement("a");
+        ((r.href = i),
+          (r.download = `${x_(n.project.name)}.pdf`),
+          r.click(),
+          URL.revokeObjectURL(i));
+      }
+      async function u_(n) {
+        const t = new Uint8Array(await n.arrayBuffer());
+        let e = "";
+        const i = 32768;
+        for (let a = 0; a < t.length; a += i)
+          e += String.fromCharCode(...t.subarray(a, a + i));
+        const r = e.match(/\/Traco3D\s*\(([A-Za-z0-9+/=]+)\)/);
+        if (!r) throw new Error("Este PDF não contém um projeto Traço 3D");
+        const s = atob(r[1]),
+          o = Uint8Array.from(s, (a) => a.charCodeAt(0));
+        return JSON.parse(new TextDecoder().decode(o));
+      }
+      function d_({ project: n, perspective: t, showProjectors: e }) {
+        const i = [],
+          r = {
+            front: Wr(24, 310, 382, 240, n.views.front),
+            side: Wr(418, 310, 400, 240, n.views.side),
+            top: Wr(24, 42, 382, 240, n.views.top),
+            iso: Wr(418, 42, 400, 240),
+          };
+        (i.push("1 1 1 rg 0 0 842 595 re f"),
+          xi(i, 24, 574, 15, "TRAÇO 3D", !0, [0.05, 0.22, 0.34]),
+          xi(i, 118, 574, 10, n.name, !0, [0.14, 0.22, 0.27]),
+          xi(i, 818, 574, 6, "PRIMEIRO DIEDRO", !1, [0.42, 0.5, 0.55], "right"),
+          Ks(i, r.front, "VF  VISTA FRONTAL"),
+          Ks(i, r.side, "VLE  VISTA LATERAL ESQUERDA"),
+          Ks(i, r.top, "VS  VISTA SUPERIOR"),
+          p_(i, r.iso, "30  PERSPECTIVA ISOMETRICA", t),
+          e && m_(i, r, n.views),
+          xi(
+            i,
+            24,
+            19,
+            5.5,
+            "Arquivo editavel: dados Traço 3D incorporados ao PDF",
+            !1,
+            [0.45, 0.51, 0.55],
+          ),
+          xi(
+            i,
+            818,
+            19,
+            5.5,
+            new Date().toLocaleDateString("pt-BR"),
+            !1,
+            [0.45, 0.51, 0.55],
+            "right",
+          ));
+        const s = qo.encode(
+            i.join(`
+`),
+          ),
+          o = __(qo.encode(JSON.stringify(n))),
+          a = [
+            ze("<< /Type /Catalog /Pages 2 0 R >>"),
+            ze("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            ze(
+              "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> /XObject << /Im1 7 0 R >> >> /Contents 4 0 R >>",
+            ),
+            Rc(`<< /Length ${s.length} >>`, s),
+            ze(
+              "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+            ),
+            ze(
+              "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+            ),
+            Rc(
+              `<< /Type /XObject /Subtype /Image /Width ${t.width} /Height ${t.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${t.bytes.length} >>`,
+              t.bytes,
+            ),
+            ze(
+              `<< /Title (${Pl(Cl(n.name))}) /Creator (Traco 3D) /Traco3D (${o}) >>`,
+            ),
+          ];
+        return g_(a, 8);
+      }
+      function Wr(n, t, e, i, r) {
+        const s = Math.min(e - 34, i - 43);
+        return {
+          x: n,
+          y: t,
+          width: e,
+          height: i,
+          view: r,
+          gridSize: s,
+          gridX: n + (e - s) / 2,
+          gridY: t + 10,
+        };
+      }
+      function Ks(n, t, e) {
+        Rl(n, t, e);
+        const i = t.view,
+          r =
+            i.segments.length > 0
+              ? i.segments
+              : [{ x1: 0, y1: 0, x2: i.cols, y2: i.rows }],
+          s = r.flatMap((b) => [b.x1, b.x2]),
+          o = r.flatMap((b) => [b.y1, b.y2]),
+          a = Math.min(...s),
+          c = Math.max(...s),
+          l = Math.min(...o),
+          h = Math.max(...o);
+        ((t.minX = a), (t.maxX = c), (t.minY = l), (t.maxY = h));
+        const d = Math.max(c - a, 1),
+          f = Math.max(h - l, 1),
+          u = t.width - 30,
+          g = t.height - 42,
+          M = Math.min(u / d, g / f) * 0.92,
+          m = t.x + t.width / 2,
+          p = t.y + (t.height - 24) / 2 - 2;
+        ((t.gridX = m - ((a + c) / 2) * M),
+          (t.gridY = p - (i.rows - (l + h) / 2) * M),
+          (t.gridSize = M));
+        for (const b of i.segments) f_(n, t, b);
+      }
+      function f_(n, t, e) {
+        const i = wn(t, e.x1, e.y1),
+          r = wn(t, e.x2, e.y2);
+        (n.push(e.type === "hidden" ? "[5 3] 0 d" : "[] 0 d"),
+          n.push(`0.07 0.19 0.27 RG ${e.type === "hidden" ? "1" : "1.7"} w`),
+          n.push(`${Wt(i.x)} ${Wt(i.y)} m ${Wt(r.x)} ${Wt(r.y)} l S`),
+          n.push("[] 0 d"));
+      }
+      function Rl(n, t, e) {
+        (n.push("0.985 0.99 0.992 rg 0.78 0.84 0.87 RG 0.7 w"),
+          n.push(`${t.x} ${t.y} ${t.width} ${t.height} re B`),
+          n.push(
+            `0.88 0.92 0.94 RG 0.5 w ${t.x} ${t.y + t.height - 24} m ${t.x + t.width} ${t.y + t.height - 24} l S`,
+          ),
+          xi(n, t.x + 10, t.y + t.height - 16, 7, e, !0, [0.09, 0.22, 0.3]));
+      }
+      function p_(n, t, e, i) {
+        Rl(n, t, e);
+        const r = {
+            x: t.x + 10,
+            y: t.y + 10,
+            width: t.width - 20,
+            height: t.height - 42,
+          },
+          s = Math.min(r.width / i.width, r.height / i.height),
+          o = i.width * s,
+          a = i.height * s,
+          c = r.x + (r.width - o) / 2,
+          l = r.y + (r.height - a) / 2;
+        n.push(`q ${Wt(o)} 0 0 ${Wt(a)} ${Wt(c)} ${Wt(l)} cm /Im1 Do Q`);
+      }
+      function m_(n, t, e) {
+        n.push("[3 3] 0 d 0.9 0.55 0.08 RG 0.45 w");
+        for (const i of Js(e.front, "x", e.top, "x")) {
+          const r = wn(t.front, i, t.front.maxY),
+            s = wn(t.top, i, t.top.minY);
+          n.push(`${Wt(r.x)} ${Wt(r.y)} m ${Wt(s.x)} ${Wt(s.y)} l S`);
+        }
+        for (const i of Js(e.front, "y", e.side, "y")) {
+          const r = wn(t.front, t.front.maxX, i),
+            s = wn(t.side, t.side.minX, i);
+          n.push(`${Wt(r.x)} ${Wt(r.y)} m ${Wt(s.x)} ${Wt(s.y)} l S`);
+        }
+        n.push("[2 3] 0 d 0.08 0.48 0.65 RG 0.45 w");
+        for (const i of Js(e.top, "y", e.side, "x")) {
+          const r = wn(t.top, t.top.maxX, i),
+            s = wn(t.side, i, t.side.maxY),
+            o = (t.top.x + t.top.width + t.side.x) / 2,
+            a = (t.top.y + t.top.height + t.side.y) / 2;
+          n.push(
+            `${Wt(r.x)} ${Wt(r.y)} m ${Wt(o)} ${Wt(r.y)} ${Wt(o)} ${Wt(a)} ${Wt(o)} ${Wt(a)} c ${Wt(o)} ${Wt(a)} ${Wt(s.x)} ${Wt(a)} ${Wt(s.x)} ${Wt(s.y)} c S`,
+          );
+        }
+        n.push("[] 0 d");
+      }
+      function wn(n, t, e) {
+        return {
+          x: n.gridX + t * n.gridSize,
+          y: n.gridY + (n.view.rows - e) * n.gridSize,
+        };
+      }
+      function Js(n, t, e, i) {
+        const r = (o, a) =>
+            new Set(
+              o.segments.flatMap((c) =>
+                a === "x" ? [c.x1, c.x2] : [c.y1, c.y2],
+              ),
+            ),
+          s = r(n, t);
+        return [...r(e, i)].filter((o) => s.has(o)).sort((o, a) => o - a);
+      }
+      function xi(n, t, e, i, r, s, o, a = "left") {
+        const c = r.length * i * 0.52,
+          l = a === "center" ? t - c / 2 : a === "right" ? t - c : t;
+        n.push(
+          `${o.join(" ")} rg BT /${s ? "F2" : "F1"} ${i} Tf ${Wt(l)} ${Wt(e)} Td (${Pl(r)}) Tj ET`,
+        );
+      }
+      function Rc(n, t) {
+        return ts(
+          ze(`${n}
+stream
+`),
+          t,
+          ze(`
+endstream`),
+        );
+      }
+      function g_(n, t) {
+        const e = ts(
+            ze(`%PDF-1.7
+%`),
+            new Uint8Array([226, 227, 207, 211]),
+            ze(`
+`),
+          ),
+          i = [e],
+          r = [0];
+        let s = e.length;
+        n.forEach((c, l) => {
+          r.push(s);
+          const h = ts(
+            ze(`${l + 1} 0 obj
+`),
+            c,
+            ze(`
+endobj
+`),
+          );
+          (i.push(h), (s += h.length));
+        });
+        const o = s,
+          a = [
+            `xref
+0 ${n.length + 1}
+`,
+            `0000000000 65535 f 
+`,
+            ...r.slice(1).map(
+              (c) => `${String(c).padStart(10, "0")} 00000 n 
+`,
+            ),
+            `trailer
+<< /Size ${n.length + 1} /Root 1 0 R /Info ${t} 0 R >>
+startxref
+${o}
+%%EOF
+`,
+          ].join("");
+        return (i.push(ze(a)), ts(...i));
+      }
+      function Cl(n) {
+        return n
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^\x20-\x7e]/g, "?");
+      }
+      function Pl(n) {
+        let t = "";
+        for (const e of n) {
+          if (/[\\()]/.test(e)) {
+            t += `\\${e}`;
+            continue;
+          }
+          const i = e.codePointAt(0) ?? 63;
+          i >= 32 && i <= 126
+            ? (t += e)
+            : i <= 255
+              ? (t += `\\${i.toString(8).padStart(3, "0")}`)
+              : (t += "?");
+        }
+        return t;
+      }
+      function ze(n) {
+        return qo.encode(n);
+      }
+      function ts(...n) {
+        const t = new Uint8Array(n.reduce((i, r) => i + r.length, 0));
+        let e = 0;
+        for (const i of n) (t.set(i, e), (e += i.length));
+        return t;
+      }
+      function __(n) {
+        let t = "";
+        for (let e = 0; e < n.length; e += 16384)
+          t += String.fromCharCode(...n.subarray(e, e + 16384));
+        return btoa(t);
+      }
+      function x_(n) {
+        return (
+          Cl(n)
+            .replace(/[^a-zA-Z0-9_-]+/g, "-")
+            .replace(/^-|-$/g, "")
+            .toLowerCase() || "projeto"
+        );
+      }
+      function Wt(n) {
+        return Number(n.toFixed(2)).toString();
+      }
+      class Ll {
+        container;
+        canvas;
+        mode;
+        renderer;
+        scene = new wu();
+        camera;
+        controls;
+        object = new Si();
+        size = 10;
+        constructor(t, e) {
+          ((this.container = t),
+            (this.canvas = t.querySelector("canvas")),
+            (this.mode = e),
+            (this.renderer = new Wg({
+              canvas: this.canvas,
+              antialias: !0,
+              alpha: !0,
+            })),
+            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)),
+            (this.renderer.outputColorSpace = Be),
+            (this.renderer.shadowMap.enabled = !1),
+            (this.camera = new ha(-8, 8, 8, -8, 0.1, 100)),
+            (this.controls = new M_(this.camera, this.canvas)),
+            (this.controls.enableDamping = e === "interactive"),
+            (this.controls.dampingFactor = 0.07),
+            (this.controls.enableRotate = e === "interactive"),
+            (this.controls.enablePan = !0),
+            e === "isometric" && (this.controls.mouseButtons.LEFT = MOUSE.PAN),
+            (this.controls.zoomToCursor = !0),
+            this.setupScene(),
+            this.resetCamera(),
+            new ResizeObserver(() => this.resize()).observe(t),
+            this.animate());
+        }
+        setGeometry(t) {
+          if (
+            (this.scene.remove(this.object),
+            U_(this.object),
+            (this.object = new Si()),
+            (this.object.scale.x = -1),
+            t.getAttribute("position")?.count)
+          ) {
+            const e = t.clone(),
+              i = new Ku({
+                color: this.mode === "isometric" ? 14543341 : 5810376,
+                roughness: 0.72,
+                metalness: 0.03,
+                polygonOffset: !0,
+                polygonOffsetFactor: 1,
+                polygonOffsetUnits: 1,
+              }),
+              r = new Ke(e, i);
+            ((r.castShadow = !1), (r.receiveShadow = !1));
+            const s = new ca(new Lu(e, 8), new aa({ color: 1521483 }));
+            (this.object.add(r, s),
+              (this.size = e.boundingSphere?.radius
+                ? e.boundingSphere.radius * 2
+                : 10));
+          } else this.size = 10;
+          (this.scene.add(this.object), this.resetCamera());
+        }
+        resetCamera() {
+          const t = Math.max(this.size * 2.2, 20),
+            e = new Jn().setFromObject(this.object),
+            i = e.isEmpty() ? new O(0, 1.6, 0) : e.getCenter(new O()),
+            r = new O(this.mode === "isometric" ? 1 : 1, 1, -1).normalize();
+          (this.camera.zoom = 1),
+            this.camera.updateProjectionMatrix(),
+            (this.camera.position.copy(i).addScaledVector(r, t),
+            this.controls.target.copy(i),
+            this.controls.update(),
+            this.resize());
+        }
+        captureJpeg(t = 0.92) {
+          const e = this.scene.background,
+            i = this.scene.getObjectByName("drafting-grid"),
+            r = i?.visible,
+            s = this.camera.position.clone(),
+            o = this.controls.target.clone(),
+            a = this.camera.zoom;
+          ((this.scene.background = new kt(16382972)), i && (i.visible = !1));
+          const c = new Jn().setFromObject(this.object);
+          if (c.isEmpty())
+            ((this.camera.zoom = a), this.camera.updateProjectionMatrix());
+          else {
+            const d = c.getBoundingSphere(new lr()),
+              f = s.clone().sub(o).normalize(),
+              u = Math.max(s.distanceTo(o), d.radius * 3);
+            (this.controls.target.copy(d.center),
+              this.camera.position.copy(d.center).addScaledVector(f, u),
+              (this.camera.zoom = el.clamp(
+                this.camera.top / Math.max(d.radius * 1.22, 0.1),
+                0.1,
+                10,
+              )),
+              this.camera.updateProjectionMatrix(),
+              this.controls.update());
+          }
+          this.renderer.render(this.scene, this.camera);
+          const l = this.canvas.toDataURL("image/jpeg", t);
+          ((this.scene.background = e),
+            i && r !== void 0 && (i.visible = r),
+            (this.camera.zoom = a),
+            this.camera.updateProjectionMatrix(),
+            this.camera.position.copy(s),
+            this.controls.target.copy(o),
+            this.controls.update(),
+            this.renderer.render(this.scene, this.camera));
+          const h = atob(l.split(",")[1]);
+          return {
+            bytes: Uint8Array.from(h, (d) => d.charCodeAt(0)),
+            width: this.canvas.width,
+            height: this.canvas.height,
+          };
+        }
+        setupScene() {
+          this.scene.add(new td(16777215, 12767704, 2.1));
+          const t = new id(16777215, 2.7);
+          (t.position.set(-7, 13, 9), (t.castShadow = !1), this.scene.add(t));
+          const e = new sd(26, 26, 11190474, 14213862);
+          ((e.name = "drafting-grid"),
+            (e.position.y = -0.02),
+            (Array.isArray(e.material) ? e.material : [e.material]).forEach(
+              (r) => {
+                ((r.transparent = !0),
+                  (r.opacity = this.mode === "isometric" ? 0.38 : 0.25));
+              },
+            ),
+            this.scene.add(e));
+        }
+        resize() {
+          const t = Math.max(this.container.clientWidth, 1),
+            e = Math.max(this.container.clientHeight, 1);
+          this.renderer.setSize(t, e, !1);
+          const i = t / e,
+            r = Math.max(this.size * 0.7, 6.8);
+          ((this.camera.left = -r * i),
+            (this.camera.right = r * i),
+            (this.camera.top = r),
+            (this.camera.bottom = -r),
+            this.camera.updateProjectionMatrix());
+        }
+        animate = () => {
+          (requestAnimationFrame(this.animate),
+            this.controls.update(),
+            this.renderer.render(this.scene, this.camera));
+        };
+      }
+      function U_(n) {
+        n.traverse((t) => {
+          (t instanceof Ke || t instanceof ca) &&
+            (t.geometry.dispose(),
+            (Array.isArray(t.material) ? t.material : [t.material]).forEach(
+              (i) => i.dispose(),
+            ));
+        });
+      }
+      const Ul = "traco-3d-project-v2",
+        Il = "traco-3d-display-mode-v1",
+        I_ = 80;
+      let Nl = "visible",
+        jn = [],
+        ar = [],
+        Dc = 0,
+        Fl = !1,
+        es = "front";
+      const Bi = Pt("project-name"),
+        Ol = Pt("undo"),
+        Bl = Pt("redo"),
+        Ri = Pt("file-input"),
+        jo = Pt("show-fill"),
+        $o = Pt("show-coordinates"),
+        fs = Pt("show-projectors"),
+        Lc = Pt("model-status"),
+        Zi = Pt("projection-guides"),
+        Yr = Pt("all-views-scroll"),
+        ls = Pt("all-views-content"),
+        Qt = {
+          front: to("front-view", ce.x, ce.z),
+          side: to("side-view", ce.y, ce.z),
+          top: to("top-view", ce.x, ce.y),
+        },
+        Xn = new Ll(Pt("iso-viewer"), "isometric"),
+        vi = new Ll(Pt("model-viewer"), "interactive");
+      N_();
+      F_();
+      X_();
+      zi();
+      function to(n, t, e) {
+        return new i_({
+          svg: Pt(n),
+          cols: t,
+          rows: e,
+          getTool: () => Nl,
+          onBeforeChange: ur,
+          onChange: zi,
+        });
+      }
+      function N_() {
+        (document.querySelectorAll(".tool").forEach((n) => {
+          n.addEventListener("click", () => eo(n.dataset.tool));
+        }),
+          Ol.addEventListener("click", no),
+          Bl.addEventListener("click", qr),
+          Pt("load-example").addEventListener("click", G_),
+          Pt("clear-all-desktop").addEventListener("click", ns),
+          Pt("clear-menu-trigger").addEventListener("click", H_),
+          document.querySelectorAll("[data-clear-action]").forEach((n) => {
+            n.addEventListener("click", () => {
+              (n.dataset.clearAction === "all" ? ns() : W_(), Ic());
+            });
+          }),
+          Pt("workspace-undo").addEventListener("click", no),
+          Pt("workspace-redo").addEventListener("click", qr),
+          Pt("new-project").addEventListener("click", ns),
+          Pt("save-project").addEventListener("click", kl),
+          Pt("export-pdf").addEventListener("click", Gl),
+          Pt("open-project").addEventListener("click", () => Ri.click()),
+          Pt("reset-iso").addEventListener("click", () => Xn.resetCamera()),
+          Pt("reset-camera").addEventListener("click", () => vi.resetCamera()),
+          Pt("switch-mobile").addEventListener("click", () => fa("mobile", !0)),
+          document.querySelectorAll("[data-mobile-tool]").forEach((n) => {
+            n.addEventListener("click", () => eo(n.dataset.mobileTool));
+          }),
+          document.querySelectorAll(".mobile-menu-trigger").forEach((n) => {
+            n.addEventListener("click", () => {
+              const t = n.closest(".mobile-menu"),
+                e = t?.classList.toggle("open") ?? !1;
+              (n.setAttribute("aria-expanded", String(e)),
+                e &&
+                  document
+                    .querySelectorAll(".mobile-menu.open")
+                    .forEach((i) => {
+                      i !== t &&
+                        (i.classList.remove("open"),
+                        i
+                          .querySelector(".mobile-menu-trigger")
+                          ?.setAttribute("aria-expanded", "false"));
+                    }));
+            });
+          }),
+          document
+            .querySelectorAll(".mobile-menu-panel button")
+            .forEach((n) => {
+              n.addEventListener("click", Uc);
+            }),
+          document.addEventListener("pointerdown", (n) => {
+            n.target instanceof Element &&
+              (n.target.closest(".mobile-menu") || Uc(),
+              n.target.closest(".clear-menu") || Ic());
+          }),
+          document.querySelectorAll("[data-mobile-view]").forEach((n) => {
+            n.addEventListener("click", () =>
+              zl(n.dataset.mobileView ?? "front"),
+            );
+          }),
+          B_(),
+          document.querySelectorAll("[data-mobile-action]").forEach((n) => {
+            n.addEventListener("click", () => z_(n.dataset.mobileAction ?? ""));
+          }),
+          document.querySelectorAll("[data-toggle]").forEach((n) => {
+            n.addEventListener("click", () => k_(n.dataset.toggle ?? ""));
+          }),
+          jo.addEventListener("change", () =>
+            Object.values(Qt).forEach((n) => n.setShowFill(jo.checked)),
+          ),
+          $o.addEventListener("change", () =>
+            Object.values(Qt).forEach((n) => n.setShowCoordinates($o.checked)),
+          ),
+          fs.addEventListener("change", Ji),
+          Bi.addEventListener("input", () => Vl()),
+          Ri.addEventListener("change", V_),
+          window.addEventListener("resize", () => requestAnimationFrame(Ji)),
+          new ResizeObserver(() => requestAnimationFrame(Ji)).observe(
+            Pt("front-view"),
+          ),
+          window.addEventListener("keydown", (n) => {
+            if (!(n.target instanceof HTMLInputElement && n.target !== Ri)) {
+              if ((n.ctrlKey || n.metaKey) && n.key.toLowerCase() === "z")
+                (n.preventDefault(), n.shiftKey ? qr() : no());
+              else if ((n.ctrlKey || n.metaKey) && n.key.toLowerCase() === "y")
+                (n.preventDefault(), qr());
+              else if (!n.ctrlKey && !n.metaKey && !n.altKey) {
+                const e = { v: "visible", o: "hidden", e: "erase" }[
+                  n.key.toLowerCase()
+                ];
+                e && eo(e);
+              }
+            }
+          }));
+      }
+      function eo(n) {
+        ((Nl = n),
+          document.querySelectorAll(".tool").forEach((t) => {
+            const e = t.dataset.tool === n;
+            (t.classList.toggle("active", e),
+              t.setAttribute("aria-pressed", String(e)));
+          }),
+          document.querySelectorAll("[data-mobile-tool]").forEach((t) => {
+            const e = t.dataset.mobileTool === n;
+            (t.classList.toggle("active", e),
+              t.setAttribute("aria-pressed", String(e)));
+          }));
+      }
+      function F_() {
+        const n = localStorage.getItem(Il);
+        fa(n === "desktop" || n === "mobile" ? n : O_(), !1);
+      }
+      function O_() {
+        const n = navigator;
+        return typeof n.userAgentData?.mobile == "boolean"
+          ? n.userAgentData.mobile
+            ? "mobile"
+            : "desktop"
+          : (/Android|iPhone|iPad|iPod|Windows Phone|webOS|BlackBerry/i.test(
+              navigator.userAgent,
+            ) ||
+              (/Macintosh/i.test(navigator.userAgent) &&
+                navigator.maxTouchPoints > 1),
+            "mobile");
+      }
+      function fa(n, t) {
+        (document.documentElement.classList.toggle(
+          "mobile-mode",
+          n === "mobile",
+        ),
+          document.documentElement.classList.toggle(
+            "desktop-mode",
+            n === "desktop",
+          ),
+          t && localStorage.setItem(Il, n),
+          n === "mobile" && zl("front"));
+      }
+      function zl(n) {
+        ((es = n),
+          document.querySelectorAll(".drawing-card").forEach((t) => {
+            t.classList.toggle(
+              "mobile-active",
+              t.classList.contains(`${n}-card`),
+            );
+          }),
+          document.querySelectorAll(".viewer-card").forEach((t) => {
+            const e = !!(
+              (n === "iso" && t.querySelector("#iso-viewer")) ||
+              (n === "model" && t.querySelector("#model-viewer"))
+            );
+            t.classList.toggle("mobile-active", e);
+          }),
+          document
+            .querySelector(".all-views-card")
+            ?.classList.toggle("mobile-active", n === "all"),
+          n === "all" && Hl(),
+          document.querySelectorAll("[data-mobile-view]").forEach((t) => {
+            const e = t.dataset.mobileView === n;
+            (t.classList.toggle("active", e),
+              t.setAttribute("aria-pressed", String(e)));
+          }),
+          requestAnimationFrame(Ji));
+      }
+      function Hl() {
+        ls.replaceChildren();
+        for (const [n, t] of [
+          ["front-view", "all-view-front"],
+          ["side-view", "all-view-side"],
+          ["top-view", "all-view-top"],
+        ]) {
+          const e = Pt(n).cloneNode(!0);
+          (e.removeAttribute("id"),
+            e.setAttribute("class", `all-view-svg ${t}`),
+            e.setAttribute("aria-hidden", "true"),
+            (e.style.pointerEvents = "none"),
+            ls.append(e));
+        }
+      }
+      function B_() {
+        const n = new Map();
+        let t = 1,
+          e = 1,
+          i = 1;
+        (Yr.addEventListener("pointerdown", (s) => {
+          if (
+            (n.set(s.pointerId, { x: s.clientX, y: s.clientY }), n.size === 2)
+          ) {
+            const o = [...n.values()];
+            ((t = Math.max(Math.hypot(o[1].x - o[0].x, o[1].y - o[0].y), 1)),
+              (e = i));
+          }
+        }),
+          Yr.addEventListener("pointermove", (s) => {
+            if (
+              !n.has(s.pointerId) ||
+              (n.set(s.pointerId, { x: s.clientX, y: s.clientY }), n.size !== 2)
+            )
+              return;
+            const o = [...n.values()],
+              a = Math.max(Math.hypot(o[1].x - o[0].x, o[1].y - o[0].y), 1);
+            ((i = Math.min(2.5, Math.max(0.7, (e * a) / t))),
+              (ls.style.width = `${620 * i}px`),
+              (ls.style.height = `${420 * i}px`),
+              s.preventDefault());
+          }));
+        const r = (s) => n.delete(s.pointerId);
+        (Yr.addEventListener("pointerup", r),
+          Yr.addEventListener("pointercancel", r));
+      }
+      function z_(n) {
+        ({
+          new: ns,
+          open: () => Ri.click(),
+          save: kl,
+          pdf: Gl,
+          desktop: () => fa("desktop", !0),
+        })[n]?.();
+      }
+      function Uc() {
+        document.querySelectorAll(".mobile-menu.open").forEach((n) => {
+          (n.classList.remove("open"),
+            n
+              .querySelector(".mobile-menu-trigger")
+              ?.setAttribute("aria-expanded", "false"));
+        });
+      }
+      function H_() {
+        const n = Pt("clear-menu"),
+          t = Pt("clear-menu-trigger"),
+          e = n.querySelector(".clear-menu-panel"),
+          i = n.classList.toggle("open");
+        if (
+          (t.setAttribute("aria-expanded", String(i)),
+          i && e && document.documentElement.classList.contains("mobile-mode"))
+        ) {
+          const r = t.getBoundingClientRect();
+          ((e.style.position = "fixed"),
+            (e.style.top = `${r.bottom + 5}px`),
+            (e.style.left = `${Math.max(5, r.right - 180)}px`),
+            (e.style.right = "auto"));
+        }
+      }
+      function Ic() {
+        const n = document.querySelector(".clear-menu.open");
+        if (!n) return;
+        (n.classList.remove("open"),
+          Pt("clear-menu-trigger").setAttribute("aria-expanded", "false"));
+        const t = n.querySelector(".clear-menu-panel");
+        t &&
+          ((t.style.position = ""),
+          (t.style.top = ""),
+          (t.style.left = ""),
+          (t.style.right = ""));
+      }
+      function k_(n) {
+        const e = { fill: jo, coordinates: $o, projectors: fs }[n];
+        e &&
+          ((e.checked = !e.checked),
+          e.dispatchEvent(new Event("change")),
+          document.querySelectorAll(`[data-toggle="${n}"]`).forEach((i) => {
+            (i.classList.toggle("active", e.checked),
+              i.setAttribute("aria-pressed", String(e.checked)));
+          }));
+      }
+      function zi() {
+        qi(!1);
+        const n = {
+            front: Qt.front.getMask(),
+            top: Qt.top.getMask(),
+            side: Qt.side.getMask(),
+          },
+          t = Object.entries(n)
+            .filter(([, e]) => q_(e) === 0)
+            .map(([e]) => e);
+        if (t.length > 0) {
+          const e = bl(Tl(n.front, n.top, n.side));
+          (Xn.setGeometry(e.geometry),
+            vi.setGeometry(e.geometry),
+            Oc(0, 0),
+            kn(
+              "waiting",
+              `Complete ${t.length === 3 ? "as três vistas" : t.length === 2 ? "duas vistas" : $_(t[0])}`,
+            ));
+        } else {
+          const e = {
+              front: Qt.front.getState(),
+              top: Qt.top.getState(),
+              side: Qt.side.getState(),
+            },
+            i = $g(e),
+            r = i ? null : Zg(e),
+            s = i || r ? null : Qg(e);
+          if (i)
+            (qi(!0),
+              Xn.setGeometry(i.geometry),
+              vi.setGeometry(i.geometry),
+              Bc(i.stats.vertices ?? 0, i.stats.faces),
+              kn("ready", "Canal chanfrado reconstruído"),
+              i.geometry.dispose());
+          else if (r)
+            (qi(!0),
+              Xn.setGeometry(r.geometry),
+              vi.setGeometry(r.geometry),
+              Bc(r.stats.vertices ?? 0, r.stats.faces),
+              kn("ready", "Prisma de perfil reconstruído"),
+              r.geometry.dispose());
+          else if (s)
+            (qi(!0),
+              Xn.setGeometry(s.geometry),
+              vi.setGeometry(s.geometry),
+              Y_(s.stats.vertices ?? 0, s.stats.faces),
+              kn("ready", "Telhado de quatro águas reconstruído"),
+              s.geometry.dispose());
+          else {
+            const o = qg(e, n.front, n.top, n.side),
+              a = jg(o, e);
+            (qi(a.stats.voxels > 0 && (Nc(e) || Fc(o, n))),
+              Xn.setGeometry(a.geometry),
+              vi.setGeometry(a.geometry),
+              Oc(a.stats.voxels, a.stats.faces),
+              a.stats.voxels === 0
+                ? kn("error", "Vistas incompatíveis")
+                : !Nc(e) && !Fc(o, n)
+                  ? kn(
+                      "error",
+                      "Há regiões sem correspondência entre as vistas",
+                    )
+                  : kn("ready", "Modelo reconstruído"),
+              a.geometry.dispose());
+          }
+        }
+        (Wl(),
+          Vl(),
+          requestAnimationFrame(Ji),
+          document.querySelector(".all-views-card.mobile-active") && Hl());
+      }
+      function Nc(n) {
+        return ["front", "side"].some((t) =>
+          n[t].segments.some(
+            (e) => e.type === "visible" && e.x1 !== e.x2 && e.y1 !== e.y2,
+          ),
+        );
+      }
+      function ur() {
+        (jn.push(Hi()), jn.length > I_ && jn.shift(), (ar = []), Wl());
+      }
+      function no() {
+        const n = jn.pop();
+        n && (ar.push(Hi()), ps(n), en("Alteração desfeita"));
+      }
+      function qr() {
+        const n = ar.pop();
+        n && (jn.push(Hi()), ps(n), en("Alteração refeita"));
+      }
+      function G_() {
+        (ur(), (Bi.value = "Peça ortogonal — exemplo"));
+        const n = wl();
+        (Qt.front.setState(n.front),
+          Qt.top.setState(n.top),
+          Qt.side.setState(n.side),
+          zi(),
+          en("Exemplo carregado. Você pode editar qualquer linha."));
+      }
+      function ns() {
+        (ur(),
+          (Bi.value = "Peça sem título"),
+          Object.values(Qt).forEach((n) => n.clear()),
+          zi(),
+          en("Vistas limpas. Use Ctrl+Z para recuperar."));
+      }
+      function Hi() {
+        return {
+          version: 1,
+          name: Bi.value.trim() || "Peça sem título",
+          views: {
+            front: Qt.front.getState(),
+            top: Qt.top.getState(),
+            side: Qt.side.getState(),
+          },
+        };
+      }
+      function ps(n) {
+        ((Bi.value = K_(n.name)),
+          Qt.front.setState(n.views.front),
+          Qt.top.setState(n.views.top),
+          Qt.side.setState(n.views.side),
+          zi());
+      }
+      function kl() {
+        const n = Hi(),
+          t = new Blob([JSON.stringify(n, null, 2)], {
+            type: "application/json",
+          }),
+          e = URL.createObjectURL(t),
+          i = document.createElement("a");
+        ((i.href = e),
+          (i.download = `${Z_(n.name)}.traco3d.json`),
+          i.click(),
+          URL.revokeObjectURL(e),
+          en("Arquivo JSON salvo"));
+      }
+      async function V_() {
+        const n = Ri.files?.[0];
+        if (((Ri.value = ""), !!n))
+          try {
+            const t =
+              n.type === "application/pdf" ||
+              n.name.toLowerCase().endsWith(".pdf")
+                ? await u_(n)
+                : JSON.parse(await n.text());
+            if (!Xl(t)) throw new Error("Formato inválido");
+            (ur(), ps(t), en("Projeto aberto com sucesso"));
+          } catch {
+            en("Não foi possível abrir este arquivo");
+          }
+      }
+      function Gl() {
+        if (!Fl) {
+          en("Complete as vistas antes de exportar o PDF");
+          return;
+        }
+        (h_({
+          project: Hi(),
+          perspective: Xn.captureJpeg(),
+          showProjectors: fs.checked,
+        }),
+          en("PDF técnico exportado com os dados editáveis"));
+      }
+      function W_() {
+        const n =
+          es === "front"
+            ? Qt.front
+            : es === "side"
+              ? Qt.side
+              : es === "top"
+                ? Qt.top
+                : null;
+        if (!n) {
+          en("Selecione uma vista ortográfica para limpar");
+          return;
+        }
+        (ur(),
+          n.clear(),
+          zi(),
+          en("Vista atual limpa. Use Ctrl+Z para recuperar."));
+      }
+      function qi(n) {
+        ((Fl = n),
+          (Pt("export-pdf").disabled = !n),
+          document
+            .querySelectorAll('[data-mobile-action="pdf"]')
+            .forEach((t) => {
+              ((t.disabled = !n), t.setAttribute("aria-disabled", String(!n)));
+            }));
+      }
+      function X_() {
+        const n = localStorage.getItem(Ul);
+        if (n)
+          try {
+            const e = JSON.parse(n);
+            if (Xl(e)) {
+              ps(e);
+              return;
+            }
+          } catch {}
+        Bi.value = "Peça ortogonal — exemplo";
+        const t = wl();
+        (Qt.front.setState(t.front),
+          Qt.top.setState(t.top),
+          Qt.side.setState(t.side));
+      }
+      function Vl() {
+        (window.clearTimeout(Dc),
+          (Pt("save-state").textContent = "Salvando…"),
+          (Dc = window.setTimeout(() => {
+            (localStorage.setItem(Ul, JSON.stringify(Hi())),
+              (Pt("save-state").textContent = "Salvo localmente"));
+          }, 220)));
+      }
+      function Fc(n, t) {
+        const e = {
+          front: t.front.map((i) => i.map(() => !1)),
+          top: t.top.map((i) => i.map(() => !1)),
+          side: t.side.map((i) => i.map(() => !1)),
+        };
+        for (let i = 0; i < n.length; i += 1)
+          for (let r = 0; r < (n[i]?.length ?? 0); r += 1)
+            for (let s = 0; s < (n[i]?.[r]?.length ?? 0); s += 1)
+              n[i][r][s] &&
+                ((e.front[e.front.length - 1 - s][i] = !0),
+                (e.top[r][i] = !0),
+                (e.side[e.side.length - 1 - s][r] = !0));
+        return Object.keys(t).every((i) => j_(t[i], e[i]));
+      }
+      function kn(n, t) {
+        Lc.className = `status ${n}`;
+        const e = Lc.querySelector("span");
+        e && (e.textContent = t);
+      }
+      function Oc(n, t) {
+        ((Pt("voxel-count").textContent =
+          `${n} ${n === 1 ? "célula sólida" : "células sólidas"}`),
+          (Pt("face-count").textContent =
+            `${t} ${t === 1 ? "face externa" : "faces externas"}`));
+      }
+      function Y_(n, t) {
+        ((Pt("voxel-count").textContent = `${n} vértices estruturais`),
+          (Pt("face-count").textContent = `${t} águas inclinadas`));
+      }
+      function Bc(n, t) {
+        ((Pt("voxel-count").textContent = `${n} vértices estruturais`),
+          (Pt("face-count").textContent = `${t} triângulos de superfície`));
+      }
+      function Wl() {
+        ((Ol.disabled = jn.length === 0),
+          (Bl.disabled = ar.length === 0),
+          (Pt("workspace-undo").disabled = jn.length === 0),
+          (Pt("workspace-redo").disabled = ar.length === 0));
+      }
+      function en(n) {
+        const t = Pt("toast-region"),
+          e = document.createElement("div");
+        ((e.className = "toast"),
+          (e.textContent = n),
+          t.append(e),
+          window.setTimeout(() => e.remove(), 3200));
+      }
+      function q_(n) {
+        return n.reduce((t, e) => t + e.filter(Boolean).length, 0);
+      }
+      function j_(n, t) {
+        return (
+          n.length === t.length &&
+          n.every(
+            (e, i) =>
+              e.length === t[i].length && e.every((r, s) => r === t[i][s]),
+          )
+        );
+      }
+      function $_(n) {
+        return n === "front"
+          ? "a vista frontal"
+          : n === "top"
+            ? "a vista superior"
+            : "a vista lateral";
+      }
+      function Z_(n) {
+        return (
+          n
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-zA-Z0-9_-]+/g, "-")
+            .replace(/^-|-$/g, "")
+            .toLowerCase() || "projeto"
+        );
+      }
+      function K_(n) {
+        if (!/[ÃÂ]/.test(n)) return n;
+        try {
+          const t = Uint8Array.from([...n].map((e) => e.charCodeAt(0)));
+          return new TextDecoder("utf-8", { fatal: !0 }).decode(t);
+        } catch {
+          return n;
+        }
+      }
+      function Xl(n) {
+        if (!n || typeof n != "object") return !1;
+        const t = n;
+        return t.version !== 1 || typeof t.name != "string" || !t.views
+          ? !1
+          : ["front", "top", "side"].every((e) => {
+              const i = t.views?.[e];
+              return !!(
+                i &&
+                Number.isInteger(i.cols) &&
+                Number.isInteger(i.rows) &&
+                Array.isArray(i.segments)
+              );
+            });
+      }
+      function Ji() {
+        if ((Zi.replaceChildren(), !fs.checked)) return;
+        const n = Zi.parentElement;
+        if (!n) return;
+        const t = n.getBoundingClientRect();
+        if (t.width === 0 || t.height === 0) return;
+        Zi.setAttribute("viewBox", `0 0 ${t.width} ${t.height}`);
+        const e = Pt("front-view"),
+          i = Pt("top-view"),
+          r = Pt("side-view"),
+          s = {
+            front: Qt.front.getState(),
+            top: Qt.top.getState(),
+            side: Qt.side.getState(),
+          };
+        for (const c of io(s.front, "x", s.top, "x"))
+          kc(gi(e, c, Hc(s.front, c), t), gi(i, c, Q_(s.top, c), t));
+        for (const c of io(s.front, "y", s.side, "y"))
+          kc(gi(e, zc(s.front, c), c, t), gi(r, J_(s.side, c), c, t));
+        const o = [];
+        for (const c of io(s.top, "y", s.side, "x")) {
+          const l = gi(i, zc(s.top, c), c, t),
+            h = gi(r, c, Hc(s.side, c), t);
+          !l || !h || o.push({ start: l, end: h });
+        }
+        if (o.length === 0) return;
+        const a = 72;
+        for (const { start: c, end: l } of o) {
+          const h = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "path",
+          );
+          h.setAttribute("class", "projection-guide transfer");
+          const d = a,
+            f = l.x - d,
+            u = c.y - d;
+          (h.setAttribute(
+            "d",
+            `M ${c.x} ${c.y} H ${f} A ${d} ${d} 0 0 0 ${l.x} ${u} V ${l.y}`,
+          ),
+            Zi.append(h));
+        }
+      }
+      function zc(n, t) {
+        const e = [];
+        for (const i of n.segments)
+          i.y1 === i.y2 && i.y1 === t
+            ? e.push(i.x1, i.x2)
+            : i.x1 === i.x2 && ms(t, i.y1, i.y2) && e.push(i.x1);
+        return e.length > 0 ? Math.max(...e) : n.cols;
+      }
+      function J_(n, t) {
+        const e = [];
+        for (const i of n.segments)
+          i.y1 === i.y2 && i.y1 === t
+            ? e.push(i.x1, i.x2)
+            : i.x1 === i.x2 && ms(t, i.y1, i.y2) && e.push(i.x1);
+        return e.length > 0 ? Math.min(...e) : 0;
+      }
+      function Q_(n, t) {
+        const e = [];
+        for (const i of n.segments)
+          i.x1 === i.x2 && i.x1 === t
+            ? e.push(i.y1, i.y2)
+            : i.y1 === i.y2 && ms(t, i.x1, i.x2) && e.push(i.y1);
+        return e.length > 0 ? Math.min(...e) : 0;
+      }
+      function Hc(n, t) {
+        const e = [];
+        for (const i of n.segments)
+          i.x1 === i.x2 && i.x1 === t
+            ? e.push(i.y1, i.y2)
+            : i.y1 === i.y2 && ms(t, i.x1, i.x2) && e.push(i.y1);
+        return e.length > 0 ? Math.max(...e) : n.rows;
+      }
+      function ms(n, t, e) {
+        return n >= Math.min(t, e) && n <= Math.max(t, e);
+      }
+      function kc(n, t) {
+        if (!n || !t) return;
+        const e = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "line",
+        );
+        (e.setAttribute("class", "projection-guide"),
+          e.setAttribute("x1", String(n.x)),
+          e.setAttribute("y1", String(n.y)),
+          e.setAttribute("x2", String(t.x)),
+          e.setAttribute("y2", String(t.y)),
+          Zi.append(e));
+      }
+      function gi(n, t, e, i) {
+        const r = n.getScreenCTM();
+        if (!r) return null;
+        const s = new DOMPoint(t, e).matrixTransform(r);
+        return { x: s.x - i.left, y: s.y - i.top };
+      }
+      function io(n, t, e, i) {
+        const r = (o, a) =>
+            new Set(
+              o.segments.flatMap((c) =>
+                a === "x" ? [c.x1, c.x2] : [c.y1, c.y2],
+              ),
+            ),
+          s = r(n, t);
+        return [...r(e, i)].filter((o) => s.has(o)).sort((o, a) => o - a);
+      }
+      function Pt(n) {
+        const t = document.getElementById(n);
+        if (!t) throw new Error(`Elemento #${n} não encontrado`);
+        return t;
+      }
+    </script>
+    <style rel="stylesheet" crossorigin>
+      :root {
+        color: #182735;
+        background: #edf1f3;
+        font-family:
+          Inter,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          Segoe UI,
+          sans-serif;
+        font-synthesis: none;
+        --ink: #152838;
+        --navy: #0d3858;
+        --blue: #0879b9;
+        --cyan: #10a2d0;
+        --amber: #f2a51a;
+        --muted: #6f7f8b;
+        --border: #d5dde2;
+        --paper: #ffffff;
+        --grid-minor: #dce8ed;
+        --grid-major: #b9ccd4;
+        --shadow: 0 8px 26px rgba(31, 55, 70, 0.08);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        min-width: 1080px;
+        background: #edf1f3;
+      }
+      html.mobile-mode {
+        min-width: 0;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #edf1f3;
+      }
+      button,
+      input {
+        font: inherit;
+      }
+      button {
+        color: inherit;
+      }
+      #app {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 206px 1fr;
+        grid-template-rows: 68px 1fr 34px;
+      }
+      .topbar {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: 206px minmax(250px, 1fr) auto;
+        align-items: center;
+        height: 68px;
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 20;
+      }
+      .brand {
+        height: 68px;
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding: 0 22px;
+        color: var(--navy);
+        text-decoration: none;
+        border-right: 1px solid var(--border);
+        letter-spacing: -0.6px;
+      }
+      .brand > span:last-child {
+        display: flex;
+        align-items: baseline;
+        font-size: 19px;
+      }
+      .brand strong {
+        font-weight: 800;
+      }
+      .brand b {
+        color: var(--cyan);
+        font-size: 13px;
+        margin-left: 3px;
+      }
+      .brand-mark {
+        width: 30px;
+        height: 30px;
+        position: relative;
+        display: block;
+        transform: rotate(-30deg);
+      }
+      .brand-mark i {
+        position: absolute;
+        display: block;
+        width: 18px;
+        height: 18px;
+        border: 2px solid var(--navy);
+      }
+      .brand-mark i:nth-child(1) {
+        left: 0;
+        top: 6px;
+      }
+      .brand-mark i:nth-child(2) {
+        left: 9px;
+        top: 1px;
+        border-color: var(--cyan);
+      }
+      .brand-mark i:nth-child(3) {
+        left: 9px;
+        top: 11px;
+        border-color: var(--blue);
+      }
+      .document-title {
+        padding: 0 24px;
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        min-width: 0;
+      }
+      .document-title span,
+      .eyebrow,
+      .rail-label {
+        font:
+          600 10px/1 IBM Plex Mono,
+          monospace;
+        color: #8796a0;
+        letter-spacing: 1.35px;
+      }
+      .document-title input {
+        width: min(390px, 100%);
+        height: 34px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        padding: 0 8px;
+        font-weight: 600;
+        color: #263945;
+        background: transparent;
+      }
+      .document-title input:hover,
+      .document-title input:focus {
+        border-color: var(--border);
+        outline: none;
+        background: #f8fafb;
+      }
+      .top-actions {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 0 18px;
+      }
+      .action-divider {
+        height: 24px;
+        width: 1px;
+        background: var(--border);
+        margin: 0 3px;
+      }
+      .button,
+      .icon-button,
+      .viewer-button {
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+        transition:
+          background 0.15s,
+          border-color 0.15s,
+          color 0.15s,
+          transform 0.08s;
+      }
+      .button:active,
+      .icon-button:active,
+      .viewer-button:active {
+        transform: translateY(1px);
+      }
+      .button {
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 14px;
+        line-height: 1;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .button-quiet {
+        background: transparent;
+        color: #516470;
+      }
+      .button-quiet:hover {
+        background: #edf3f6;
+        color: var(--navy);
+      }
+      .button-primary {
+        background: var(--navy);
+        color: #fff;
+        box-shadow: 0 3px 8px #0d38582e;
+      }
+      .button-primary:hover {
+        background: #0b466f;
+      }
+      .button-outline {
+        border: 1px solid #bfcdd5;
+        background: #fff;
+        color: var(--navy);
+      }
+      .button-outline:hover {
+        border-color: var(--blue);
+        color: var(--blue);
+      }
+      .button.danger:hover {
+        color: #c63f37;
+        background: #fff2f1;
+      }
+      .icon-button {
+        width: 34px;
+        height: 34px;
+        background: transparent;
+        font-size: 22px;
+        color: #566b78;
+      }
+      .icon-button:hover:not(:disabled) {
+        background: #edf3f6;
+        color: var(--navy);
+      }
+      .icon-button:disabled {
+        opacity: 0.28;
+        cursor: default;
+      }
+      .button:disabled {
+        opacity: 0.38;
+        cursor: default;
+        pointer-events: none;
+      }
+      .toolrail {
+        grid-column: 1;
+        grid-row: 2;
+        background: #f8fafb;
+        border-right: 1px solid var(--border);
+        padding: 27px 15px;
+        position: sticky;
+        top: 68px;
+        height: calc(100vh - 102px);
+        z-index: 10;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+      }
+      .rail-label {
+        padding: 0 10px;
+        margin: 0 0 10px;
+      }
+      .tool {
+        position: relative;
+        width: 100%;
+        height: 44px;
+        display: grid;
+        grid-template-columns: 34px 1fr auto;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid transparent;
+        background: transparent;
+        border-radius: 5px;
+        padding: 0 9px;
+        cursor: pointer;
+        color: #50636e;
+        text-align: left;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .tool:hover {
+        background: #edf3f6;
+      }
+      .tool.active {
+        background: #e4f1f7;
+        color: var(--navy);
+        border-color: #c9e2ed;
+      }
+      .tool.active:before {
+        content: "";
+        position: absolute;
+        width: 3px;
+        height: 22px;
+        left: -1px;
+        background: var(--cyan);
+        border-radius: 0 2px 2px 0;
+      }
+      .tool kbd {
+        font:
+          500 9px/1 IBM Plex Mono,
+          monospace;
+        color: #8b9ba5;
+        border: 1px solid #ccd7dd;
+        border-radius: 3px;
+        padding: 4px 5px;
+        background: #fff;
+      }
+      .line-swatch {
+        width: 25px;
+        height: 0;
+        display: block;
+        border-top: 3px solid var(--navy);
+      }
+      .line-dashed {
+        border-top-style: dashed;
+        border-width: 2px;
+      }
+      .erase-icon {
+        width: 27px;
+        text-align: center;
+        font-size: 20px;
+        font-weight: 400;
+      }
+      .rail-separator {
+        height: 1px;
+        background: var(--border);
+        margin: 24px 8px;
+      }
+      .switch-row {
+        height: 36px;
+        padding: 0 9px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11px;
+        font-weight: 600;
+        color: #596c78;
+        cursor: pointer;
+      }
+      .switch-row input {
+        position: absolute;
+        opacity: 0;
+      }
+      .switch-row i {
+        width: 31px;
+        height: 17px;
+        border-radius: 10px;
+        background: #becbd2;
+        position: relative;
+        transition: 0.2s;
+      }
+      .switch-row i:after {
+        content: "";
+        position: absolute;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        left: 2px;
+        top: 2px;
+        background: #fff;
+        transition: 0.2s;
+        box-shadow: 0 1px 3px #00000026;
+      }
+      .switch-row input:checked + i {
+        background: var(--cyan);
+      }
+      .switch-row input:checked + i:after {
+        transform: translate(14px);
+      }
+      .rail-tip {
+        margin: 24px 3px 0;
+        border-left: 2px solid var(--amber);
+        padding: 2px 0 2px 12px;
+      }
+      .rail-tip strong {
+        color: #435a68;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+      }
+      .rail-tip p {
+        color: #81909a;
+        font-size: 10px;
+        line-height: 1.5;
+        margin: 5px 0 0;
+      }
+      .mode-switch {
+        width: 100%;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin-top: 5px;
+        padding: 0 9px;
+        border: 1px solid transparent;
+        border-radius: 5px;
+        background: transparent;
+        color: #596c78;
+        text-align: left;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .mode-switch:hover {
+        background: #edf3f6;
+        color: var(--navy);
+      }
+      .mode-switch span {
+        width: 27px;
+        text-align: center;
+        color: var(--blue);
+        font-size: 17px;
+        line-height: 1;
+      }
+      .mobile-navbars,
+      .all-views-card {
+        display: none;
+      }
+      .workspace {
+        grid-column: 2;
+        grid-row: 2;
+        padding: 32px clamp(30px, 4vw, 72px) 58px;
+        overflow: hidden;
+      }
+      .workspace-heading,
+      .results-heading {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        margin-bottom: 18px;
+      }
+      .workspace h1,
+      .results-heading h2 {
+        margin: 5px 0 0;
+        font-size: 21px;
+        letter-spacing: -0.4px;
+        color: var(--ink);
+      }
+      .heading-tools {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex: 1;
+        min-width: 0;
+        margin-left: 24px;
+        gap: 7px;
+      }
+      .history-actions {
+        display: none;
+        align-items: center;
+        gap: 7px;
+      }
+      .view-actions {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-left: auto;
+      }
+      .clear-menu {
+        position: relative;
+        display: none;
+      }
+      #clear-all-desktop {
+        display: inline-flex;
+      }
+      #clear-all-desktop.button-outline {
+        border: 1px solid #bfcdd5;
+        background: #fff;
+        color: var(--navy);
+      }
+      #clear-all-desktop.button-outline:hover {
+        border-color: var(--blue);
+        color: var(--blue);
+      }
+      .clear-menu-panel {
+        position: absolute;
+        top: calc(100% + 5px);
+        right: 0;
+        z-index: 30;
+        display: none;
+        min-width: 175px;
+        padding: 5px;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        box-shadow: 0 8px 20px #0f2d4229;
+      }
+      .clear-menu.open .clear-menu-panel {
+        display: grid;
+        gap: 2px;
+      }
+      .clear-menu-panel button {
+        min-height: 32px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: 3px;
+        background: transparent;
+        color: #536774;
+        text-align: left;
+        font-size: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .clear-menu-panel button:hover {
+        background: #edf3f6;
+        color: var(--navy);
+      }
+      .drawing-layout {
+        display: grid;
+        grid-template-columns: minmax(410px, 1fr) minmax(410px, 1fr);
+        grid-template-rows: auto auto;
+        gap: 16px;
+        position: relative;
+      }
+      .projection-guides {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+        pointer-events: none;
+        z-index: 4;
+      }
+      .projection-guide {
+        fill: none;
+        stroke: #0788b5;
+        stroke-width: 1.5;
+        stroke-dasharray: 5 4;
+        opacity: 0.78;
+        vector-effect: non-scaling-stroke;
+      }
+      .projection-guide.transfer {
+        stroke: #0788b5;
+        stroke-width: 1.5;
+        stroke-dasharray: 5 4;
+        opacity: 0.78;
+      }
+      .drawing-card {
+        position: relative;
+        z-index: 2;
+      }
+      .drawing-card,
+      .viewer-card {
+        background: var(--paper);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .drawing-card > header,
+      .viewer-card > header {
+        height: 50px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 16px;
+        border-bottom: 1px solid #e3e9ec;
+      }
+      .drawing-card header > div,
+      .viewer-card header > div {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .drawing-card h2,
+      .viewer-card h3 {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 650;
+        color: #344955;
+      }
+      .view-code {
+        display: grid;
+        place-items: center;
+        min-width: 30px;
+        height: 22px;
+        padding: 0 5px;
+        border-radius: 3px;
+        color: var(--navy);
+        background: #dff0f6;
+        font:
+          700 9px/1 IBM Plex Mono,
+          monospace;
+        letter-spacing: 0.5px;
+      }
+      .view-code.amber {
+        color: #875707;
+        background: #fff0ce;
+      }
+      .view-code.blue {
+        color: #06618f;
+        background: #dff2f9;
+      }
+      .dimensions {
+        font:
+          500 9px/1 IBM Plex Mono,
+          monospace;
+        color: #90a0a9;
+      }
+      .drawing-card .svg-wrap {
+        position: relative;
+        z-index: 0;
+        overflow: hidden;
+        padding: 18px 24px;
+        background: #fcfdfd;
+        height: clamp(260px, 29vw, 355px);
+      }
+      .drawing-card svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+        touch-action: none;
+        cursor: crosshair;
+        user-select: none;
+      }
+      .drawing-card > footer,
+      .viewer-card > footer {
+        min-height: 29px;
+        padding: 0 16px;
+        background: #f8fafb;
+        border-top: 1px solid #e7ecef;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font:
+          500 8px/1 IBM Plex Mono,
+          monospace;
+        color: #8b9aa3;
+        text-transform: uppercase;
+        letter-spacing: 0.55px;
+      }
+      .front-card {
+        grid-column: 1;
+        grid-row: 1;
+      }
+      .side-card {
+        grid-column: 2;
+        grid-row: 1;
+      }
+      .top-card {
+        grid-column: 1;
+        grid-row: 2;
+      }
+      .projection-note {
+        grid-column: 2;
+        grid-row: 2;
+        align-self: center;
+        justify-self: center;
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        color: #758690;
+      }
+      .projection-note strong {
+        display: block;
+        font:
+          600 10px/1 IBM Plex Mono,
+          monospace;
+        letter-spacing: 1px;
+        color: #526772;
+      }
+      .projection-note small {
+        display: block;
+        font-size: 9px;
+        margin-top: 6px;
+      }
+      .projection-symbol {
+        width: 53px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .projection-symbol i {
+        width: 29px;
+        height: 27px;
+        display: block;
+        border: 1.5px solid #7f929c;
+        transform: perspective(35px) rotateY(-25deg);
+      }
+      .projection-symbol b {
+        width: 18px;
+        height: 27px;
+        border: 1.5px solid #7f929c;
+        border-radius: 50%;
+      }
+      .results-heading {
+        margin-top: 42px;
+      }
+      .status {
+        height: 29px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 15px;
+        padding: 0 12px;
+        font-size: 10px;
+        font-weight: 600;
+      }
+      .status i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+      }
+      .status.waiting {
+        color: #7d6a3f;
+        background: #fff6df;
+      }
+      .status.waiting i {
+        background: var(--amber);
+      }
+      .status.ready {
+        color: #287057;
+        background: #e8f7f0;
+      }
+      .status.ready i {
+        background: #38a97d;
+        box-shadow: 0 0 0 3px #38a97d21;
+      }
+      .status.error {
+        color: #a0443e;
+        background: #fff0ef;
+      }
+      .status.error i {
+        background: #d65a50;
+      }
+      .viewer-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .viewer-card > header {
+        height: 52px;
+      }
+      .viewer-button {
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid #d6e0e5;
+        background: #fff;
+        color: #6f818c;
+        font-size: 9px;
+        font-weight: 600;
+      }
+      .viewer-button:hover {
+        border-color: #9eb7c3;
+        color: var(--navy);
+      }
+      .viewer {
+        height: clamp(330px, 34vw, 455px);
+        position: relative;
+        overflow: hidden;
+        background: #f9fbfc;
+        touch-action: none;
+      }
+      .viewer canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        outline: 0;
+      }
+      #iso-viewer canvas {
+        cursor: grab;
+      }
+      #iso-viewer canvas:active {
+        cursor: grabbing;
+      }
+      .viewer:before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(
+          circle at 50% 45%,
+          transparent 0,
+          transparent 42%,
+          rgba(19, 56, 78, 0.025) 100%
+        );
+        z-index: 1;
+      }
+      .interactive .viewer {
+        background: #eef3f5;
+      }
+      .mouse-hint {
+        position: absolute;
+        left: 50%;
+        bottom: 13px;
+        transform: translate(-50%);
+        white-space: nowrap;
+        color: #788b96;
+        background: #ffffffdb;
+        border: 1px solid #d7e1e6;
+        border-radius: 14px;
+        padding: 6px 11px;
+        font-size: 8px;
+        pointer-events: none;
+        z-index: 2;
+      }
+      .mouse-hint span {
+        color: var(--blue);
+        font-size: 12px;
+        vertical-align: -1px;
+        margin-right: 3px;
+      }
+      .legend-edge {
+        display: inline-block;
+        width: 18px;
+        border-top: 1.5px solid #183244;
+        margin-right: 6px;
+        vertical-align: 2px;
+      }
+      @media (min-width: 0px) {
+        html.mobile-mode body {
+          min-width: 0;
+          overflow-x: hidden;
+        }
+        html.mobile-mode #app {
+          display: block;
+          min-height: 100dvh;
+        }
+        html.mobile-mode .topbar {
+          position: fixed;
+          inset: 0 0 auto;
+          display: flex;
+          height: 50px;
+          z-index: 40;
+        }
+        html.mobile-mode .brand {
+          height: 50px;
+          padding: 0 12px;
+          border-right: 0;
+          gap: 7px;
+        }
+        html.mobile-mode .brand-mark {
+          transform: scale(0.75) rotate(-30deg);
+          margin-right: -4px;
+        }
+        html.mobile-mode .brand > span:last-child {
+          font-size: 15px;
+        }
+        html.mobile-mode .document-title {
+          flex: 1;
+          min-width: 0;
+          padding: 0 8px;
+        }
+        html.mobile-mode .document-title > span {
+          display: none;
+        }
+        html.mobile-mode .document-title input {
+          min-width: 0;
+          width: 100%;
+          height: 32px;
+          font-size: 12px;
+        }
+        html.mobile-mode .top-actions,
+        html.mobile-mode .toolrail,
+        html.mobile-mode .app-footer {
+          display: none;
+        }
+        html.mobile-mode .mobile-navbars {
+          position: fixed;
+          top: 50px;
+          left: 0;
+          right: 0;
+          height: 52px;
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 4px;
+          padding: 4px;
+          background: #0f2d42;
+          z-index: 40;
+        }
+        html.mobile-mode .mobile-menu {
+          position: relative;
+          min-width: 0;
+        }
+        html.mobile-mode .mobile-menu-trigger {
+          width: 100%;
+          height: 44px;
+          padding: 0 5px;
+          border: 0;
+          border-radius: 4px;
+          background: #f8fafb;
+          color: var(--navy);
+          font-size: 11px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        html.mobile-mode .mobile-menu-trigger:first-letter {
+          font-size: 17px;
+        }
+        html.mobile-mode .mobile-menu.open .mobile-menu-trigger {
+          background: #dff0f6;
+        }
+        html.mobile-mode .mobile-menu-panel {
+          position: absolute;
+          top: 48px;
+          display: none;
+          flex-direction: column;
+          gap: 3px;
+          min-width: 170px;
+          max-width: min(280px, 90vw);
+          max-height: calc(100dvh - 112px);
+          overflow-y: auto;
+          padding: 5px;
+          background: #f8fafb;
+          border: 1px solid var(--border);
+          border-radius: 4px;
+          box-shadow: 0 8px 20px #0f2d4233;
+        }
+        html.mobile-mode .mobile-menu.open .mobile-menu-panel {
+          display: flex;
+        }
+        html.mobile-mode .mobile-menu:nth-child(1) .mobile-menu-panel {
+          left: 0;
+        }
+        html.mobile-mode .mobile-menu:nth-child(2) .mobile-menu-panel {
+          left: 50%;
+          transform: translate(-50%);
+        }
+        html.mobile-mode .mobile-menu:nth-child(3) .mobile-menu-panel {
+          right: 0;
+        }
+        html.mobile-mode .mobile-menu-panel button {
+          flex: 0 0 auto;
+          min-height: 38px;
+          padding: 0 11px;
+          border: 0;
+          border-radius: 3px;
+          background: transparent;
+          color: #536774;
+          font-size: 10px;
+          font-weight: 650;
+          text-align: left;
+          white-space: nowrap;
+          cursor: pointer;
+        }
+        html.mobile-mode .mobile-menu-panel button.active {
+          background: #dff0f6;
+          color: var(--navy);
+        }
+        html.mobile-mode .mobile-menu-panel button.active {
+          border: 1px solid var(--cyan);
+          box-shadow: inset 0 0 0 1px #10a2d029;
+        }
+        html.mobile-mode .mobile-menu-panel button:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
+        html.mobile-mode .mobile-menu-panel button:active {
+          transform: translateY(1px);
+        }
+        html.mobile-mode .mobile-nav-divider {
+          flex: 0 0 1px;
+          width: 100%;
+          margin: 2px 0;
+          background: var(--border);
+        }
+        html.mobile-mode .workspace {
+          display: block;
+          padding: 116px 8px 18px;
+          min-height: 100dvh;
+          overflow: visible;
+        }
+        html.mobile-mode .workspace-heading {
+          align-items: center;
+          margin-bottom: 10px;
+        }
+        html.mobile-mode .workspace-heading {
+          justify-content: flex-start;
+        }
+        html.mobile-mode .workspace-heading .eyebrow,
+        html.mobile-mode .workspace-heading h1,
+        html.mobile-mode .results-heading .eyebrow,
+        html.mobile-mode .results-heading h2 {
+          display: none;
+        }
+        html.mobile-mode .workspace h1 {
+          font-size: 17px;
+        }
+        html.mobile-mode .heading-tools {
+          width: 100%;
+          min-width: 100%;
+          flex: none;
+          margin-left: 0;
+          gap: 4px;
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+        html.mobile-mode .history-actions {
+          display: flex;
+        }
+        html.mobile-mode .view-actions {
+          margin-left: 0;
+        }
+        html.mobile-mode #clear-all-desktop {
+          display: none;
+        }
+        html.mobile-mode .clear-menu {
+          display: block;
+        }
+        html.mobile-mode .heading-tools::-webkit-scrollbar {
+          display: none;
+        }
+        html.mobile-mode .heading-tools .button {
+          height: 30px;
+          padding: 0 7px;
+          font-size: 9px;
+        }
+        html.mobile-mode .drawing-layout {
+          display: block;
+        }
+        html.mobile-mode .drawing-card,
+        html.mobile-mode .viewer-card,
+        html.mobile-mode .all-views-card {
+          display: none;
+        }
+        html.mobile-mode .drawing-card.mobile-active,
+        html.mobile-mode .viewer-card.mobile-active,
+        html.mobile-mode .all-views-card.mobile-active {
+          display: block;
+        }
+        html.mobile-mode .projection-note,
+        html.mobile-mode .projection-guides {
+          display: none;
+        }
+        html.mobile-mode .drawing-card .svg-wrap {
+          height: calc(100dvh - 238px);
+          min-height: 260px;
+          padding: 8px;
+        }
+        html.mobile-mode .results-heading {
+          display: none;
+        }
+        html.mobile-mode .results-heading h2 {
+          font-size: 17px;
+        }
+        html.mobile-mode .status {
+          max-width: 52%;
+          font-size: 9px;
+        }
+        html.mobile-mode .viewer-grid {
+          display: block;
+        }
+        html.mobile-mode .viewer {
+          height: calc(100dvh - 220px);
+          min-height: 300px;
+        }
+        html.mobile-mode .viewer-card > header,
+        html.mobile-mode .drawing-card > header {
+          padding: 0 10px;
+        }
+        html.mobile-mode .mouse-hint {
+          font-size: 9px;
+        }
+        html.mobile-mode .rail-tip {
+          display: none;
+        }
+        html.mobile-mode .all-views-card {
+          background: var(--paper);
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          overflow: hidden;
+        }
+        html.mobile-mode .all-views-scroll {
+          width: 100%;
+          height: calc(100dvh - 150px);
+          min-height: 300px;
+          overflow: auto;
+          overscroll-behavior: contain;
+          touch-action: pan-x pan-y;
+          background: #fcfdfd;
+        }
+        html.mobile-mode .all-views-content {
+          display: grid;
+          grid-template-columns: 2fr 1fr;
+          grid-template-rows: 1fr 1fr;
+          gap: 8px;
+          width: 620px;
+          height: 420px;
+          padding: 12px;
+        }
+        html.mobile-mode .all-view-svg {
+          display: block;
+          width: 100%;
+          height: 100%;
+          min-width: 0;
+          background: #fff;
+          border: 1px solid #e3e9ec;
+        }
+        html.mobile-mode .all-view-front {
+          grid-column: 1;
+          grid-row: 1;
+        }
+        html.mobile-mode .all-view-side {
+          grid-column: 2;
+          grid-row: 1;
+        }
+        html.mobile-mode .all-view-top {
+          grid-column: 1;
+          grid-row: 2;
+        }
+      }
+      .app-footer {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        height: 34px;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 25;
+        background: #0f2d42;
+        color: #9bb0bd;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 18px;
+        font:
+          500 8px/1 IBM Plex Mono,
+          monospace;
+        letter-spacing: 0.3px;
+      }
+      .app-footer b {
+        color: #c6d5dc;
+        font-weight: 500;
+      }
+      .save-dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        margin-right: 7px;
+        border-radius: 50%;
+        background: #42c18d;
+        box-shadow: 0 0 0 3px #42c18d1f;
+      }
+      #toast-region {
+        position: fixed;
+        right: 20px;
+        bottom: 50px;
+        z-index: 50;
+        display: grid;
+        gap: 8px;
+      }
+      .toast {
+        min-width: 250px;
+        padding: 12px 15px;
+        color: #fff;
+        background: #163b52;
+        box-shadow: 0 8px 25px #0000002e;
+        border-radius: 5px;
+        font-size: 11px;
+        animation: toast-in 0.2s ease-out;
+      }
+      @keyframes toast-in {
+        0% {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+      }
+      .grid-background {
+        fill: #fff;
+      }
+      .grid-minor {
+        stroke: var(--grid-minor);
+        stroke-width: 1;
+        vector-effect: non-scaling-stroke;
+      }
+      .grid-half {
+        stroke: #e8f0f3;
+        stroke-width: 0.7;
+        stroke-dasharray: 2 3;
+        vector-effect: non-scaling-stroke;
+      }
+      .grid-major {
+        stroke: var(--grid-major);
+        stroke-width: 1;
+        vector-effect: non-scaling-stroke;
+      }
+      .grid-border {
+        fill: none;
+        stroke: #9fb3bd;
+        stroke-width: 1.2;
+        vector-effect: non-scaling-stroke;
+      }
+      .solid-cell {
+        fill: #1d98c1;
+        opacity: 0.13;
+        pointer-events: none;
+      }
+      .technical-line {
+        fill: none;
+        stroke: #17374b;
+        stroke-width: 3;
+        stroke-linecap: square;
+        vector-effect: non-scaling-stroke;
+        cursor: pointer;
+      }
+      .technical-line.hidden {
+        stroke-width: 2;
+        stroke-dasharray: 7 5;
+      }
+      .technical-line:hover {
+        stroke: #e18b0d;
+      }
+      .line-hit {
+        stroke: transparent;
+        stroke-width: 13;
+        vector-effect: non-scaling-stroke;
+        cursor: pointer;
+      }
+      .preview-line {
+        stroke: #0c9dcb;
+        stroke-width: 2;
+        stroke-dasharray: 4 3;
+        vector-effect: non-scaling-stroke;
+        pointer-events: none;
+      }
+      .snap-point {
+        fill: #fff;
+        stroke: #0c9dcb;
+        stroke-width: 1.5;
+        vector-effect: non-scaling-stroke;
+        pointer-events: none;
+      }
+      .coordinate-label {
+        fill: #81959f;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 0.27px;
+        font-weight: 500;
+        pointer-events: none;
+      }
+      .empty-note {
+        fill: #98a8b0;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 0.34px;
+        font-weight: 500;
+        text-anchor: middle;
+        pointer-events: none;
+      }
+      @media (max-width: 1240px) {
+        #app {
+          grid-template-columns: 180px 1fr;
+        }
+        .topbar {
+          grid-template-columns: 180px minmax(220px, 1fr) auto;
+        }
+        .toolrail {
+          padding-left: 11px;
+          padding-right: 11px;
+        }
+        .workspace {
+          padding-left: 25px;
+          padding-right: 25px;
+        }
+        .top-actions .button {
+          padding: 0 10px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *:before,
+        *:after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+        }
+      }
+
+      /* Tema synthwave: escuro por padrão, com o tema claro original preservado. */
+      html[data-theme="dark"] {
+        color-scheme: dark;
+        background: #090719;
+        --ink: #f4efff;
+        --navy: #ff4fd8;
+        --blue: #54dfff;
+        --cyan: #ff4fd8;
+        --amber: #ffc857;
+        --muted: #a69cc5;
+        --border: #332957;
+        --paper: #15102b;
+        --grid-minor: #332957;
+        --grid-major: #624b91;
+        --shadow: 0 10px 30px rgba(0, 0, 0, 0.38), 0 0 22px rgba(255, 79, 216, 0.08);
+      }
+      html[data-theme="dark"] body {
+        background: #090719;
+        color: #f4efff;
+      }
+      html[data-theme="dark"] .topbar {
+        background: #100b22;
+        border-bottom-color: var(--border);
+        box-shadow: 0 0 24px rgba(255, 79, 216, 0.1);
+      }
+      html[data-theme="dark"] .brand {
+        color: #f4efff;
+        border-right-color: var(--border);
+      }
+      html[data-theme="dark"] .brand-mark i { border-color: #f4efff; }
+      html[data-theme="dark"] .brand-mark i:nth-child(2) { border-color: #ff4fd8; }
+      html[data-theme="dark"] .brand-mark i:nth-child(3) { border-color: #54dfff; }
+      html[data-theme="dark"] .document-title input {
+        color: #f4efff;
+      }
+      html[data-theme="dark"] .document-title input:hover,
+      html[data-theme="dark"] .document-title input:focus {
+        background: #1c1438;
+        border-color: #624b91;
+      }
+      html[data-theme="dark"] .document-title span,
+      html[data-theme="dark"] .eyebrow,
+      html[data-theme="dark"] .rail-label { color: #9c8fc3; }
+      html[data-theme="dark"] .action-divider,
+      html[data-theme="dark"] .drawing-card > header,
+      html[data-theme="dark"] .viewer-card > header { border-color: var(--border); }
+      html[data-theme="dark"] .button-quiet,
+      html[data-theme="dark"] .icon-button { color: #c6b9e8; }
+      html[data-theme="dark"] .button-quiet:hover,
+      html[data-theme="dark"] .icon-button:hover:not(:disabled) { background: #261946; color: #fff; }
+      html[data-theme="dark"] .button-primary {
+        background: linear-gradient(135deg, #ff4fd8, #9b5cff);
+        color: #160b2b;
+        box-shadow: 0 0 16px rgba(255, 79, 216, 0.34);
+      }
+      html[data-theme="dark"] .button-primary:hover { background: linear-gradient(135deg, #ff77e3, #b17aff); }
+      html[data-theme="dark"] .button-outline,
+      html[data-theme="dark"] .viewer-button { background: #18112f; border-color: #4d3d78; color: #d7caff; }
+      html[data-theme="dark"] .button-outline:hover,
+      html[data-theme="dark"] .viewer-button:hover { border-color: #54dfff; color: #54dfff; }
+      html[data-theme="dark"] #clear-all-desktop.button-outline {
+        background: #18112f;
+        border-color: #4d3d78;
+        color: #d7caff;
+      }
+      html[data-theme="dark"] #clear-all-desktop.button-outline:hover {
+        background: #261946;
+        border-color: #54dfff;
+        color: #54dfff;
+      }
+      html[data-theme="dark"] .toolrail { background: #0e0920; border-right-color: var(--border); }
+      html[data-theme="dark"] .tool,
+      html[data-theme="dark"] .switch-row,
+      html[data-theme="dark"] .mode-switch { color: #b9acd9; }
+      html[data-theme="dark"] .tool:hover,
+      html[data-theme="dark"] .mode-switch:hover { background: #1c1438; color: #fff; }
+      html[data-theme="dark"] .tool.active { background: #27163f; border-color: #713a87; color: #fff; box-shadow: inset 0 0 16px rgba(255, 79, 216, 0.1); }
+      html[data-theme="dark"] .tool kbd { color: #a69cc5; background: #17102d; border-color: #49396f; }
+      html[data-theme="dark"] .rail-separator { background: var(--border); }
+      html[data-theme="dark"] .rail-tip strong { color: #d5c8f1; }
+      html[data-theme="dark"] .rail-tip p { color: #9285b4; }
+      html[data-theme="dark"] .workspace h1,
+      html[data-theme="dark"] .results-heading h2 { color: #f4efff; }
+      html[data-theme="dark"] .drawing-card,
+      html[data-theme="dark"] .viewer-card,
+      html[data-theme="dark"] .all-views-card { background: var(--paper); border-color: var(--border); }
+      html[data-theme="dark"] .drawing-card h2,
+      html[data-theme="dark"] .viewer-card h3 { color: #e8ddff; }
+      html[data-theme="dark"] .drawing-card .svg-wrap,
+      html[data-theme="dark"] .all-views-scroll { background: #100b24; }
+      html[data-theme="dark"] .drawing-card > footer,
+      html[data-theme="dark"] .viewer-card > footer { background: #100b24; border-top-color: var(--border); color: #9285b4; }
+      html[data-theme="dark"] .view-code { color: #54dfff; background: #152f4c; }
+      html[data-theme="dark"] .view-code.amber { color: #ffc857; background: #3d2c25; }
+      html[data-theme="dark"] .view-code.blue { color: #54dfff; background: #153c4c; }
+      html[data-theme="dark"] .dimensions { color: #9285b4; }
+      html[data-theme="dark"] .projection-note { color: #9c8fc3; }
+      html[data-theme="dark"] .projection-note strong { color: #d5c8f1; }
+      html[data-theme="dark"] .projection-symbol i,
+      html[data-theme="dark"] .projection-symbol b { border-color: #7867a1; }
+      html[data-theme="dark"] .status.waiting { color: #ffc857; background: #392d1c; }
+      html[data-theme="dark"] .status.ready { color: #76f5c0; background: #16392f; }
+      html[data-theme="dark"] .status.error { color: #ff8d9d; background: #3b1c2a; }
+      html[data-theme="dark"] .viewer { background: #0d0a1e; }
+      html[data-theme="dark"] .interactive .viewer { background: #120d28; }
+      html[data-theme="dark"] .mouse-hint { color: #b8abd7; background: rgba(21, 16, 43, 0.9); border-color: #4d3d78; }
+      html[data-theme="dark"] .app-footer { background: #0b0718; color: #9c8fc3; border-top: 1px solid #2a2148; }
+      html[data-theme="dark"] .app-footer b { color: #d5c8f1; }
+      html[data-theme="dark"] .clear-menu-panel,
+      html[data-theme="dark"] .mobile-menu-panel { background: #17102d; border-color: var(--border); }
+      html[data-theme="dark"] .clear-menu-panel button,
+      html[data-theme="dark"] .mobile-menu-panel button { color: #c6b9e8; }
+      html[data-theme="dark"] .clear-menu-panel button:hover,
+      html[data-theme="dark"] .mobile-menu-panel button:hover { background: #261946; color: #fff; }
+      html[data-theme="dark"] .mobile-navbars { background: #0b0718; }
+      html[data-theme="dark"] .mobile-menu-trigger,
+      html[data-theme="dark"] .mobile-menu.open .mobile-menu-trigger {
+        background: #17102d;
+        border: 1px solid #332957;
+        color: #f4efff;
+      }
+      html[data-theme="dark"] .mobile-menu-panel button.active,
+      html[data-theme="dark"] .mobile-menu-panel button.mobile-toggle.active,
+      html[data-theme="dark"] .mobile-menu-panel button.mobile-view.active,
+      html[data-theme="dark"] .mobile-menu-panel button.mobile-tool.active {
+        background: #27163f;
+        border: 1px solid #ff4fd8;
+        box-shadow: inset 0 0 16px rgba(255, 79, 216, 0.12);
+        color: #fff;
+      }
+      html[data-theme="dark"] .toast { background: #29163e; border: 1px solid #704184; }
+      html[data-theme="dark"] .theme-toggle::before { content: "☀"; }
+      html[data-theme="light"] .theme-toggle::before { content: "☾"; }
+      .theme-toggle::before { margin-right: 6px; }
+      .theme-toggle { white-space: nowrap; }
+      html:not(.mobile-mode) .theme-toggle {
+        width: 92px;
+        flex: 0 0 92px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Traço 3D — início">
+          <span class="brand-mark" aria-hidden="true">
+            <i></i><i></i><i></i>
+          </span>
+          <span><strong>TRAÇO</strong><b>3D</b></span>
+        </a>
+
+        <div class="document-title">
+          <span>PROJETO</span>
+          <input
+            id="project-name"
+            value="Peça sem título"
+            aria-label="Nome do projeto"
+          />
+        </div>
+
+        <nav class="top-actions" aria-label="Ações do projeto">
+          <button
+            id="undo"
+            class="icon-button"
+            title="Desfazer (Ctrl+Z)"
+            aria-label="Desfazer"
+          >
+            ↶
+          </button>
+          <button
+            id="redo"
+            class="icon-button"
+            title="Refazer (Ctrl+Y)"
+            aria-label="Refazer"
+          >
+            ↷
+          </button>
+          <span class="action-divider"></span>
+          <button id="new-project" class="button button-quiet">Novo</button>
+          <button id="open-project" class="button button-quiet">Abrir</button>
+          <button id="save-project" class="button button-quiet">
+            Salvar JSON
+          </button>
+          <button id="export-pdf" class="button button-primary">
+            Exportar PDF
+          </button>
+          <button
+            id="theme-toggle"
+            class="button button-quiet theme-toggle"
+            data-theme-toggle
+            type="button"
+            aria-label="Alternar tema"
+            title="Alternar tema"
+          >Tema
+          </button>
+          <input
+            id="file-input"
+            type="file"
+            accept="application/json,.json,application/pdf,.pdf"
+            hidden
+          />
+        </nav>
+      </header>
+
+      <div class="mobile-navbars" aria-label="Controles móveis">
+        <nav class="mobile-menu" aria-label="Linhas e exibição">
+          <button
+            class="mobile-menu-trigger"
+            type="button"
+            aria-expanded="false"
+          >
+            ☰ <span>Linhas</span>
+          </button>
+          <div class="mobile-menu-panel">
+            <button
+              class="mobile-tool active"
+              data-mobile-tool="visible"
+              aria-pressed="true"
+            >
+              Visível
+            </button>
+            <button
+              class="mobile-tool"
+              data-mobile-tool="hidden"
+              aria-pressed="false"
+            >
+              Oculta
+            </button>
+            <button
+              class="mobile-tool"
+              data-mobile-tool="erase"
+              aria-pressed="false"
+            >
+              Apagar
+            </button>
+            <span class="mobile-nav-divider"></span>
+            <button
+              class="mobile-toggle active"
+              data-toggle="fill"
+              aria-pressed="true"
+            >
+              Preenchimento
+            </button>
+            <button
+              class="mobile-toggle active"
+              data-toggle="coordinates"
+              aria-pressed="true"
+            >
+              Coordenadas
+            </button>
+            <button
+              class="mobile-toggle"
+              data-toggle="projectors"
+              aria-pressed="false"
+            >
+              Projetantes
+            </button>
+          </div>
+        </nav>
+        <nav class="mobile-menu" aria-label="Visualização">
+          <button
+            class="mobile-menu-trigger"
+            type="button"
+            aria-expanded="false"
+          >
+            ☰ <span>Vistas</span>
+          </button>
+          <div class="mobile-menu-panel">
+            <button
+              class="mobile-view active"
+              data-mobile-view="front"
+              aria-pressed="true"
+            >
+              Frontal
+            </button>
+            <button
+              class="mobile-view"
+              data-mobile-view="side"
+              aria-pressed="false"
+            >
+              Lateral esquerda
+            </button>
+            <button
+              class="mobile-view"
+              data-mobile-view="top"
+              aria-pressed="false"
+            >
+              Superior
+            </button>
+            <button
+              class="mobile-view"
+              data-mobile-view="iso"
+              aria-pressed="false"
+            >
+              Isométrica
+            </button>
+            <button
+              class="mobile-view"
+              data-mobile-view="model"
+              aria-pressed="false"
+            >
+              Modelo interativo
+            </button>
+            <button
+              class="mobile-view"
+              data-mobile-view="all"
+              aria-pressed="false"
+            >
+              Todas as vistas
+            </button>
+          </div>
+        </nav>
+        <nav class="mobile-menu" aria-label="Projeto e tela">
+          <button
+            class="mobile-menu-trigger"
+            type="button"
+            aria-expanded="false"
+          >
+            ☰ <span>Projeto</span>
+          </button>
+          <div class="mobile-menu-panel">
+            <button data-mobile-action="new">Novo</button>
+            <button data-mobile-action="open">Abrir</button>
+            <button data-mobile-action="save">Salvar JSON</button>
+            <button data-mobile-action="pdf">Exportar PDF</button>
+            <button class="theme-toggle" data-theme-toggle type="button">Tema</button>
+            <button id="switch-desktop" data-mobile-action="desktop">
+              ↔ Modo desktop
+            </button>
+          </div>
+        </nav>
+      </div>
+
+      <aside class="toolrail" aria-label="Ferramentas de desenho">
+        <p class="rail-label">LINHAS</p>
+        <button class="tool active" data-tool="visible" aria-pressed="true">
+          <span class="line-swatch line-solid"></span>
+          <span>Visível</span>
+          <kbd>V</kbd>
+        </button>
+        <button class="tool" data-tool="hidden" aria-pressed="false">
+          <span class="line-swatch line-dashed"></span>
+          <span>Oculta</span>
+          <kbd>O</kbd>
+        </button>
+        <button class="tool" data-tool="erase" aria-pressed="false">
+          <span class="erase-icon" aria-hidden="true">⌫</span>
+          <span>Apagar</span>
+          <kbd>E</kbd>
+        </button>
+
+        <div class="rail-separator"></div>
+        <p class="rail-label">EXIBIÇÃO</p>
+        <label class="switch-row">
+          <span>Preenchimento</span>
+          <input id="show-fill" type="checkbox" checked />
+          <i></i>
+        </label>
+        <label class="switch-row">
+          <span>Coordenadas</span>
+          <input id="show-coordinates" type="checkbox" checked />
+          <i></i>
+        </label>
+        <label class="switch-row">
+          <span>Projetantes</span>
+          <input id="show-projectors" type="checkbox" />
+          <i></i>
+        </label>
+
+        <button id="switch-mobile" class="mode-switch" type="button">
+          <span aria-hidden="true">↔</span> Modo mobile
+        </button>
+        <div class="rail-tip">
+          <strong>Como desenhar</strong>
+          <p>
+            Arraste entre pontos do grid, inclusive na diagonal. Segure Shift
+            para usar meios pontos.
+          </p>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <section class="workspace-heading">
+          <div>
+            <span class="eyebrow">PRIMEIRO DIEDRO</span>
+            <h1>Projeções ortográficas</h1>
+          </div>
+          <div class="heading-tools">
+            <div class="history-actions">
+              <button
+                id="workspace-undo"
+                class="button button-quiet"
+                type="button"
+              >
+                Voltar
+              </button>
+              <button
+                id="workspace-redo"
+                class="button button-quiet"
+                type="button"
+              >
+                Avançar
+              </button>
+            </div>
+            <div class="view-actions">
+              <button id="load-example" class="button button-outline">
+                Carregar exemplo
+              </button>
+              <button
+                id="clear-all-desktop"
+                class="button button-outline"
+                type="button"
+              >
+                Limpar vistas
+              </button>
+              <div id="clear-menu" class="clear-menu">
+                <button
+                  id="clear-menu-trigger"
+                  class="button button-outline"
+                  type="button"
+                  aria-expanded="false"
+                >
+                  Limpar vistas <span aria-hidden="true">⌄</span>
+                </button>
+                <div class="clear-menu-panel" role="menu">
+                  <button type="button" data-clear-action="all" role="menuitem">
+                    Limpar todas as vistas
+                  </button>
+                  <button
+                    type="button"
+                    data-clear-action="current"
+                    role="menuitem"
+                  >
+                    Limpar vista atual
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="drawing-layout">
+          <svg
+            id="projection-guides"
+            class="projection-guides"
+            aria-hidden="true"
+          ></svg>
+          <section
+            class="drawing-card front-card"
+            aria-labelledby="front-title"
+          >
+            <header>
+              <div>
+                <span class="view-code">VF</span>
+                <h2 id="front-title">Vista frontal</h2>
+              </div>
+              <span class="dimensions" id="front-dimensions">10 × 10</span>
+            </header>
+            <div class="svg-wrap">
+              <svg
+                id="front-view"
+                aria-label="Área de desenho da vista frontal"
+              ></svg>
+            </div>
+          </section>
+
+          <section class="drawing-card side-card" aria-labelledby="side-title">
+            <header>
+              <div>
+                <span class="view-code">VLE</span>
+                <h2 id="side-title">Vista lateral esquerda</h2>
+              </div>
+              <span class="dimensions" id="side-dimensions">10 × 10</span>
+            </header>
+            <div class="svg-wrap">
+              <svg
+                id="side-view"
+                aria-label="Área de desenho da vista lateral esquerda"
+              ></svg>
+            </div>
+          </section>
+
+          <section class="drawing-card top-card" aria-labelledby="top-title">
+            <header>
+              <div>
+                <span class="view-code">VS</span>
+                <h2 id="top-title">Vista superior</h2>
+              </div>
+              <span class="dimensions" id="top-dimensions">10 × 10</span>
+            </header>
+            <div class="svg-wrap">
+              <svg
+                id="top-view"
+                aria-label="Área de desenho da vista superior"
+              ></svg>
+            </div>
+          </section>
+
+          <aside class="projection-note">
+            <span class="projection-symbol" aria-hidden="true"
+              ><i></i><b></b
+            ></span>
+            <div>
+              <strong>1º DIEDRO</strong
+              ><small>Vista superior abaixo da frontal</small>
+            </div>
+          </aside>
+          <section class="all-views-card" aria-label="Todas as vistas">
+            <div id="all-views-scroll" class="all-views-scroll">
+              <div id="all-views-content" class="all-views-content"></div>
+            </div>
+          </section>
+        </div>
+
+        <section class="results-heading">
+          <div>
+            <span class="eyebrow">RECONSTRUÇÃO INSTANTÂNEA</span>
+            <h2>Modelo resultante</h2>
+          </div>
+          <div id="model-status" class="status waiting">
+            <i></i><span>Complete as três vistas</span>
+          </div>
+        </section>
+
+        <div class="viewer-grid">
+          <section class="viewer-card" aria-labelledby="iso-title">
+            <header>
+              <div>
+                <span class="view-code amber">30°</span>
+                <h3 id="iso-title">Perspectiva isométrica</h3>
+              </div>
+              <button id="reset-iso" class="viewer-button">Reenquadrar</button>
+            </header>
+            <div id="iso-viewer" class="viewer">
+              <canvas
+                aria-label="Perspectiva isométrica fixa do modelo"
+              ></canvas>
+            </div>
+            <footer>
+              <span><i class="legend-edge"></i>Arestas visíveis</span
+              ><span>Vista isométrica</span>
+            </footer>
+          </section>
+
+          <section
+            class="viewer-card interactive"
+            aria-labelledby="model-title"
+          >
+            <header>
+              <div>
+                <span class="view-code blue">3D</span>
+                <h3 id="model-title">Modelo interativo</h3>
+              </div>
+              <button id="reset-camera" class="viewer-button">
+                Redefinir câmera
+              </button>
+            </header>
+            <div id="model-viewer" class="viewer">
+              <canvas aria-label="Modelo 3D girável com o mouse"></canvas>
+              <div class="mouse-hint">
+                <span>↔</span> Arraste para girar · roda para zoom
+              </div>
+            </div>
+            <footer>
+              <span id="voxel-count">0 células sólidas</span
+              ><span id="face-count">0 faces externas</span>
+            </footer>
+          </section>
+        </div>
+      </main>
+
+      <footer class="app-footer">
+        <span
+          ><i class="save-dot"></i><b id="save-state">Salvo localmente</b></span
+        >
+        <span>Grid: 1 unidade · Shift: 0,5 · medidas sem escala</span>
+        <span>Traço 3D · Protótipo ortogonal</span>
+      </footer>
+    </div>
+    <div id="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const buttons = document.querySelectorAll("[data-theme-toggle]");
+        const updateThemeControls = () => {
+          const isDark = root.dataset.theme !== "light";
+          buttons.forEach((button) => {
+            button.setAttribute("aria-pressed", String(isDark));
+            button.title = isDark ? "Usar tema claro" : "Usar tema escuro";
+            button.textContent = isDark ? "Escuro" : "Claro";
+          });
+        };
+        buttons.forEach((button) => {
+          button.addEventListener("click", () => {
+            const nextTheme = root.dataset.theme === "light" ? "dark" : "light";
+            root.dataset.theme = nextTheme;
+            localStorage.setItem("traco-3d-theme", nextTheme);
+            updateThemeControls();
+          });
+        });
+        updateThemeControls();
+      })();
+    </script>
+  </body>
+</html>
