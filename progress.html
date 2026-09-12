@@ -804,24 +804,26 @@
           return {
             cols: this.cols,
             rows: this.rows,
-            segments: this.segments.map((t) => ({ ...t })),
+            segments: normalizeSegments(this.segments),
           };
         }
         setState(t, e = !1) {
-          ((this.segments = t.segments
-            .filter(
-              (i) =>
-                o_(i) &&
-                i.x1 >= 0 &&
-                i.x1 <= this.cols &&
-                i.x2 >= 0 &&
-                i.x2 <= this.cols &&
-                i.y1 >= 0 &&
-                i.y1 <= this.rows &&
-                i.y2 >= 0 &&
-                i.y2 <= this.rows,
-            )
-            .map((i) => ({ ...i, id: i.id || crypto.randomUUID() }))),
+          ((this.segments = normalizeSegments(
+            t.segments
+              .filter(
+                (i) =>
+                  o_(i) &&
+                  i.x1 >= 0 &&
+                  i.x1 <= this.cols &&
+                  i.x2 >= 0 &&
+                  i.x2 <= this.cols &&
+                  i.y1 >= 0 &&
+                  i.y1 <= this.rows &&
+                  i.y2 >= 0 &&
+                  i.y2 <= this.rows,
+              )
+              .map((i) => ({ ...i, id: i.id || crypto.randomUUID() })),
+          )),
             this.recompute(),
             e && this.onChange());
         }
@@ -1004,8 +1006,7 @@
             y2: e.y,
             type: i,
           });
-          ((this.segments = this.segments.filter((s) => !s_(s, r))),
-            this.segments.push(r));
+          this.segments = normalizeSegments([...this.segments, r]);
         }
         removeSegment(t) {
           (this.onBeforeChange(),
@@ -1221,6 +1222,81 @@
         return n.x1 > n.x2 || (n.x1 === n.x2 && n.y1 > n.y2)
           ? { ...n, x1: n.x2, y1: n.y2, x2: n.x1, y2: n.y1 }
           : n;
+      }
+      function normalizeSegments(n) {
+        const t = new Map();
+        for (const e of n ?? []) {
+          const i = cs(e),
+            r = Math.round(i.x1 * $e),
+            s = Math.round(i.y1 * $e),
+            o = Math.round(i.x2 * $e),
+            a = Math.round(i.y2 * $e),
+            c = o - r,
+            l = a - s,
+            h = Math.abs(c),
+            d = Math.abs(l);
+          let f = h;
+          for (let u = h, g = d; g; ) {
+            const m = u % g;
+            ((u = g), (g = m));
+            f = u;
+          }
+          f ||= 1;
+          let u = c / f,
+            g = l / f;
+          (u < 0 || (u === 0 && g < 0)) && ((u = -u), (g = -g));
+          const m = g * r - u * s,
+            p = `${e.type}|${u}|${g}|${m}`,
+            b = r * u + s * g,
+            v = o * u + a * g,
+            y = Math.min(b, v),
+            x = Math.max(b, v),
+            w = t.get(p) ?? [];
+          w.push({ segment: i, start: y, end: x }), t.set(p, w);
+        }
+        const e = [];
+        for (const i of t.values()) {
+          i.sort((t, e) => t.start - e.start || t.end - e.end);
+          let r = null;
+          for (const s of i) {
+            if (!r || s.start > r.end + 1e-9) {
+              r && e.push(r);
+              r = { ...s };
+            } else if (s.end > r.end) r.end = s.end;
+          }
+          r && e.push(r);
+        }
+        return e.map(({ segment: n, start: t, end: e }) => {
+          const i = Math.round(t),
+            r = Math.round(e),
+            s = Math.round(n.x2 * $e) - Math.round(n.x1 * $e),
+            o = Math.round(n.y2 * $e) - Math.round(n.y1 * $e),
+            a = Math.abs(s),
+            c = Math.abs(o);
+          let l = a,
+            h = c;
+          for (; h; ) {
+            const d = l % h;
+            ((l = h), (h = d));
+          }
+          l ||= 1;
+          let d = s / l,
+            f = o / l;
+          (d < 0 || (d === 0 && f < 0)) && ((d = -d), (f = -f));
+          const u = f * Math.round(n.x1 * $e) - d * Math.round(n.y1 * $e),
+            g = d * d + f * f,
+            m = (d * i + f * u) / g,
+            p = (f * i - d * u) / g,
+            b = (d * r + f * u) / g,
+            v = (f * r - d * u) / g;
+          return cs({
+            ...n,
+            x1: m / $e,
+            y1: p / $e,
+            x2: b / $e,
+            y2: v / $e,
+          });
+        });
       }
       function s_(n, t) {
         const e = cs(n),
@@ -2498,14 +2574,17 @@ ${o}
           !l || !h || o.push({ start: l, end: h });
         }
         if (o.length === 0) return;
-        const a = 72;
+        const a = Tc(i, r, t, s.top.cols, s.side.rows);
         for (const { start: c, end: l } of o) {
           const h = document.createElementNS(
             "http://www.w3.org/2000/svg",
             "path",
           );
           h.setAttribute("class", "projection-guide transfer");
-          const d = a,
+          const d = Math.min(
+              Math.max(4, c.y - a.sideBottomY),
+              Math.max(4, l.x - a.startX),
+            ),
             f = l.x - d,
             u = c.y - d;
           (h.setAttribute(
@@ -2542,14 +2621,17 @@ ${o}
             l = gi(r, a, Hc(s.side, a), t);
           !c || !l || o.push({ start: c, end: l });
         }
-        const a = 72;
+        const a = Tc(i, r, t, s.top.cols, s.side.rows);
         for (const { start: c, end: l } of o) {
           const h = document.createElementNS(
             "http://www.w3.org/2000/svg",
             "path",
           );
           h.setAttribute("class", "projection-guide transfer");
-          const d = a,
+          const d = Math.min(
+              Math.max(4, c.y - a.sideBottomY),
+              Math.max(4, l.x - a.startX),
+            ),
             f = l.x - d,
             u = c.y - d;
           (h.setAttribute(
@@ -2612,6 +2694,15 @@ ${o}
         if (!r) return null;
         const s = new DOMPoint(t, e).matrixTransform(r);
         return { x: s.x - i.left, y: s.y - i.top };
+      }
+      function Tc(n, t, e, width, height) {
+        const i = gi(n, width, 0, e),
+          r = gi(t, 0, 0, e),
+          o = gi(t, 0, height, e),
+          s = i?.x ?? e.width,
+          a = r?.x ?? s,
+          c = o?.y ?? e.height;
+        return { startX: s, endX: a, sideBottomY: c };
       }
       function io(n, t, e, i) {
         const r = (o, a) =>
@@ -3966,8 +4057,8 @@ ${o}
         --muted: #a69cc5;
         --border: #332957;
         --paper: #15102b;
-        --grid-minor: #332957;
-        --grid-major: #624b91;
+        --grid-minor: #dce8ed;
+        --grid-major: #b9ccd4;
         --shadow: 0 10px 30px rgba(0, 0, 0, 0.38), 0 0 22px rgba(255, 79, 216, 0.08);
       }
       html[data-theme="dark"] body {
@@ -4044,6 +4135,12 @@ ${o}
       html[data-theme="dark"] .viewer-card h3 { color: #e8ddff; }
       html[data-theme="dark"] .drawing-card .svg-wrap,
       html[data-theme="dark"] .all-views-scroll { background: #100b24; }
+      html[data-theme="dark"] .projection-guide {
+        stroke: #d64055;
+      }
+      html[data-theme="dark"] .projection-guide.transfer {
+        stroke: #d64055;
+      }
       html[data-theme="dark"] .drawing-card > footer,
       html[data-theme="dark"] .viewer-card > footer { background: #100b24; border-top-color: var(--border); color: #9285b4; }
       html[data-theme="dark"] .view-code { color: #54dfff; background: #152f4c; }
