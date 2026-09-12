@@ -14,6 +14,13 @@
       content="Editor de projeções ortográficas em primeiro diedro com reconstrução 3D instantânea."
     />
     <title>Traço 3D — Desenho Técnico</title>
+    <script>
+      (() => {
+        const savedTheme = localStorage.getItem("traco-3d-theme");
+        document.documentElement.dataset.theme =
+          savedTheme === "light" ? "light" : "dark";
+      })();
+    </script>
     <script type="importmap">
       {
         "imports": {
@@ -36,6 +43,7 @@
         LineSegments,
         MathUtils,
         Matrix4,
+        MOUSE,
         Mesh,
         MeshStandardMaterial,
         OrthographicCamera,
@@ -912,7 +920,38 @@
                 return;
               }
               this.pointerId === e.pointerId && this.cancelDrawing();
-            }));
+            })),
+            this.svg.addEventListener(
+              "wheel",
+              (e) => {
+                if (
+                  !document.documentElement.classList.contains("desktop-mode") ||
+                  !e.ctrlKey
+                )
+                  return;
+                e.preventDefault();
+                const i = this.svg.getBoundingClientRect(),
+                  r = this.viewBox[2],
+                  s = this.viewBox[3],
+                  o =
+                    this.viewBox[0] +
+                    ((e.clientX - i.left) / Math.max(i.width, 1)) * r,
+                  a =
+                    this.viewBox[1] +
+                    ((e.clientY - i.top) / Math.max(i.height, 1)) * s,
+                  c = e.deltaY > 0 ? 1.12 : 1 / 1.12,
+                  l = Vr(r * c, 3, this.cols + 1.6),
+                  h = Vr(s * c, 3, this.rows + 1.6);
+                ((this.viewBox = [
+                  o - ((o - this.viewBox[0]) * l) / r,
+                  a - ((a - this.viewBox[1]) * h) / s,
+                  l,
+                  h,
+                ]),
+                  this.applyViewBox());
+              },
+              { passive: !1 },
+            );
         }
         cancelDrawing() {
           ((this.start = null),
@@ -1322,9 +1361,14 @@
           xi(i, 24, 574, 15, "TRAÇO 3D", !0, [0.05, 0.22, 0.34]),
           xi(i, 118, 574, 10, n.name, !0, [0.14, 0.22, 0.27]),
           xi(i, 818, 574, 6, "PRIMEIRO DIEDRO", !1, [0.42, 0.5, 0.55], "right"),
-          Ks(i, r.front, "VF  VISTA FRONTAL"),
-          Ks(i, r.side, "VLE  VISTA LATERAL ESQUERDA"),
-          Ks(i, r.top, "VS  VISTA SUPERIOR"),
+          (() => {
+            const s = Math.min(
+              ...[r.front, r.side, r.top].map((e) => Rs(e)),
+            );
+            (Ks(i, r.front, "VF  VISTA FRONTAL", s),
+              Ks(i, r.side, "VLE  VISTA LATERAL ESQUERDA", s),
+              Ks(i, r.top, "VS  VISTA SUPERIOR", s));
+          })(),
           p_(i, r.iso, "30  PERSPECTIVA ISOMETRICA", t),
           e && m_(i, r, n.views),
           xi(
@@ -1387,7 +1431,19 @@
           gridY: t + 10,
         };
       }
-      function Ks(n, t, e) {
+      function Rs(n) {
+        const t = n.view,
+          e =
+            t.segments.length > 0
+              ? t.segments
+              : [{ x1: 0, y1: 0, x2: t.cols, y2: t.rows }],
+          i = e.flatMap((s) => [s.x1, s.x2]),
+          r = e.flatMap((s) => [s.y1, s.y2]),
+          o = Math.max(Math.max(...i) - Math.min(...i), 1),
+          a = Math.max(Math.max(...r) - Math.min(...r), 1);
+        return Math.min((n.width - 30) / o, (n.height - 42) / a) * 0.92;
+      }
+      function Ks(n, t, e, sharedScale) {
         Rl(n, t, e);
         const i = t.view,
           r =
@@ -1403,9 +1459,8 @@
         ((t.minX = a), (t.maxX = c), (t.minY = l), (t.maxY = h));
         const d = Math.max(c - a, 1),
           f = Math.max(h - l, 1),
-          u = t.width - 30,
-          g = t.height - 42,
-          M = Math.min(u / d, g / f) * 0.92,
+          M =
+            sharedScale ?? Math.min((t.width - 30) / d, (t.height - 42) / f) * 0.92,
           m = t.x + t.width / 2,
           p = t.y + (t.height - 24) / 2 - 2;
         ((t.gridX = m - ((a + c) / 2) * M),
@@ -1619,8 +1674,28 @@ ${o}
             (this.controls.enableDamping = e === "interactive"),
             (this.controls.dampingFactor = 0.07),
             (this.controls.enableRotate = e === "interactive"),
-            (this.controls.enablePan = e === "interactive"),
+            (this.controls.enablePan = !0),
+            e === "isometric" && (this.controls.mouseButtons.LEFT = MOUSE.PAN),
             (this.controls.zoomToCursor = !0),
+            this.canvas.addEventListener(
+              "wheel",
+              (t) => {
+                if (
+                  !document.documentElement.classList.contains("desktop-mode") ||
+                  !t.ctrlKey
+                )
+                  return;
+                t.preventDefault();
+                this.camera.zoom = el.clamp(
+                  this.camera.zoom * (t.deltaY < 0 ? 1.12 : 1 / 1.12),
+                  0.1,
+                  10,
+                );
+                this.camera.updateProjectionMatrix();
+                this.controls.update();
+              },
+              { passive: !1 },
+            ),
             this.setupScene(),
             this.resetCamera(),
             new ResizeObserver(() => this.resize()).observe(t),
@@ -1657,31 +1732,47 @@ ${o}
           const t = Math.max(this.size * 2.2, 20),
             e = new Jn().setFromObject(this.object),
             i = e.isEmpty() ? new O(0, 1.6, 0) : e.getCenter(new O()),
-            r = new O(this.mode === "isometric" ? 1 : -1, 1, -1).normalize();
-          (this.camera.position.copy(i).addScaledVector(r, t),
+            r = new O(this.mode === "isometric" ? 1 : 1, 1, -1).normalize();
+          (this.camera.zoom = 1),
+            this.camera.updateProjectionMatrix(),
+            (this.camera.position.copy(i).addScaledVector(r, t),
             this.controls.target.copy(i),
             this.controls.update(),
             this.resize());
         }
-        captureJpeg(t = 0.92) {
-          const e = this.scene.background,
-            i = this.scene.getObjectByName("drafting-grid"),
-            r = i?.visible,
-            s = this.camera.position.clone(),
-            o = this.controls.target.clone(),
-            a = this.camera.zoom;
-          ((this.scene.background = new kt(16382972)), i && (i.visible = !1));
-          const c = new Jn().setFromObject(this.object);
-          if (c.isEmpty())
-            ((this.camera.zoom = a), this.camera.updateProjectionMatrix());
-          else {
-            const d = c.getBoundingSphere(new lr()),
-              f = s.clone().sub(o).normalize(),
-              u = Math.max(s.distanceTo(o), d.radius * 3);
-            (this.controls.target.copy(d.center),
-              this.camera.position.copy(d.center).addScaledVector(f, u),
+        captureJpeg(t = 0.92, e = 900, i = 560) {
+          const r = this.scene.background,
+            s = this.scene.getObjectByName("drafting-grid"),
+            o = s?.visible,
+            a = this.camera.position.clone(),
+            c = this.controls.target.clone(),
+            l = this.camera.zoom,
+            h = {
+              left: this.camera.left,
+              right: this.camera.right,
+              top: this.camera.top,
+              bottom: this.camera.bottom,
+            },
+            d = this.renderer.getSize(new O());
+          this.renderer.setSize(e, i, !1);
+          const f = e / i,
+            u = Math.max(this.size * 0.7, 6.8);
+          ((this.camera.left = -u * f),
+            (this.camera.right = u * f),
+            (this.camera.top = u),
+            (this.camera.bottom = -u),
+            this.camera.updateProjectionMatrix(),
+            (this.scene.background = new kt(16382972)),
+            s && (s.visible = !1));
+          const g = new Jn().setFromObject(this.object);
+          if (!g.isEmpty()) {
+            const m = g.getBoundingSphere(new lr()),
+              p = a.clone().sub(c).normalize(),
+              b = Math.max(a.distanceTo(c), m.radius * 3);
+            (this.controls.target.copy(m.center),
+              this.camera.position.copy(m.center).addScaledVector(p, b),
               (this.camera.zoom = el.clamp(
-                this.camera.top / Math.max(d.radius * 1.22, 0.1),
+                this.camera.top / Math.max(m.radius * 1.22, 0.1),
                 0.1,
                 10,
               )),
@@ -1689,21 +1780,29 @@ ${o}
               this.controls.update());
           }
           this.renderer.render(this.scene, this.camera);
-          const l = this.canvas.toDataURL("image/jpeg", t);
-          ((this.scene.background = e),
-            i && r !== void 0 && (i.visible = r),
-            (this.camera.zoom = a),
+          const M = this.canvas.toDataURL("image/jpeg", t),
+            m = atob(M.split(",")[1]),
+            p = {
+              bytes: Uint8Array.from(m, (b) => b.charCodeAt(0)),
+              width: this.canvas.width,
+              height: this.canvas.height,
+            };
+          return (
+            (this.scene.background = r),
+            s && o !== void 0 && (s.visible = o),
+            (this.camera.zoom = l),
+            (this.camera.left = h.left),
+            (this.camera.right = h.right),
+            (this.camera.top = h.top),
+            (this.camera.bottom = h.bottom),
             this.camera.updateProjectionMatrix(),
-            this.camera.position.copy(s),
-            this.controls.target.copy(o),
+            this.camera.position.copy(a),
+            this.controls.target.copy(c),
             this.controls.update(),
-            this.renderer.render(this.scene, this.camera));
-          const h = atob(l.split(",")[1]);
-          return {
-            bytes: Uint8Array.from(h, (d) => d.charCodeAt(0)),
-            width: this.canvas.width,
-            height: this.canvas.height,
-          };
+            this.renderer.setSize(d.x, d.y, !1),
+            this.renderer.render(this.scene, this.camera),
+            p
+          );
         }
         setupScene() {
           this.scene.add(new td(16777215, 12767704, 2.1));
@@ -1920,6 +2019,8 @@ ${o}
             "desktop-mode",
             n === "desktop",
           ),
+          (Xn.controls.enableZoom = n !== "desktop"),
+          (vi.controls.enableZoom = n !== "desktop"),
           t && localStorage.setItem(Il, n),
           n === "mobile" && zl("front"));
       }
@@ -2865,7 +2966,7 @@ ${o}
         align-items: center;
         gap: 9px;
         margin-top: 5px;
-        padding: 0 9px;
+        padding: 0;
         border: 1px solid transparent;
         border-radius: 5px;
         background: transparent;
@@ -2923,12 +3024,14 @@ ${o}
         display: none;
         align-items: center;
         gap: 7px;
+        order: 2;
       }
       .view-actions {
         display: flex;
         align-items: center;
         gap: 7px;
         margin-left: auto;
+        order: 1;
       }
       .clear-menu {
         position: relative;
@@ -3233,6 +3336,12 @@ ${o}
         height: 100%;
         display: block;
         outline: 0;
+      }
+      #iso-viewer canvas {
+        cursor: grab;
+      }
+      #iso-viewer canvas:active {
+        cursor: grabbing;
       }
       .viewer:before {
         content: "";
@@ -3542,17 +3651,19 @@ ${o}
         }
         html.mobile-mode .all-views-content {
           display: grid;
-          grid-template-columns: 2fr 1fr;
+          grid-template-columns: 1fr 1fr;
           grid-template-rows: 1fr 1fr;
           gap: 8px;
-          width: 620px;
-          height: 420px;
+          width: min(620px, calc(100vw - 16px));
+          height: min(620px, calc(100vw - 16px));
           padding: 12px;
+          box-sizing: border-box;
         }
         html.mobile-mode .all-view-svg {
           display: block;
           width: 100%;
           height: 100%;
+          aspect-ratio: 1;
           min-width: 0;
           background: #fff;
           border: 1px solid #e3e9ec;
@@ -3735,6 +3846,153 @@ ${o}
           animation-duration: 0.01ms !important;
         }
       }
+
+      /* Tema synthwave: escuro por padrão, com o tema claro original preservado. */
+      html[data-theme="dark"] {
+        color-scheme: dark;
+        background: #090719;
+        --ink: #f4efff;
+        --navy: #ff4fd8;
+        --blue: #54dfff;
+        --cyan: #ff4fd8;
+        --amber: #ffc857;
+        --muted: #a69cc5;
+        --border: #332957;
+        --paper: #15102b;
+        --grid-minor: #332957;
+        --grid-major: #624b91;
+        --shadow: 0 10px 30px rgba(0, 0, 0, 0.38), 0 0 22px rgba(255, 79, 216, 0.08);
+      }
+      html[data-theme="dark"] body {
+        background: #090719;
+        color: #f4efff;
+      }
+      html[data-theme="dark"] .topbar {
+        background: #100b22;
+        border-bottom-color: var(--border);
+        box-shadow: 0 0 24px rgba(255, 79, 216, 0.1);
+      }
+      html[data-theme="dark"] .brand {
+        color: #f4efff;
+        border-right-color: var(--border);
+      }
+      html[data-theme="dark"] .brand-mark i { border-color: #f4efff; }
+      html[data-theme="dark"] .brand-mark i:nth-child(2) { border-color: #ff4fd8; }
+      html[data-theme="dark"] .brand-mark i:nth-child(3) { border-color: #54dfff; }
+      html[data-theme="dark"] .document-title input {
+        color: #f4efff;
+      }
+      html[data-theme="dark"] .document-title input:hover,
+      html[data-theme="dark"] .document-title input:focus {
+        background: #1c1438;
+        border-color: #624b91;
+      }
+      html[data-theme="dark"] .document-title span,
+      html[data-theme="dark"] .eyebrow,
+      html[data-theme="dark"] .rail-label { color: #9c8fc3; }
+      html[data-theme="dark"] .action-divider,
+      html[data-theme="dark"] .drawing-card > header,
+      html[data-theme="dark"] .viewer-card > header { border-color: var(--border); }
+      html[data-theme="dark"] .button-quiet,
+      html[data-theme="dark"] .icon-button { color: #c6b9e8; }
+      html[data-theme="dark"] .button-quiet:hover,
+      html[data-theme="dark"] .icon-button:hover:not(:disabled) { background: #261946; color: #fff; }
+      html[data-theme="dark"] .button-primary {
+        background: linear-gradient(135deg, #ff4fd8, #9b5cff);
+        color: #160b2b;
+        box-shadow: 0 0 16px rgba(255, 79, 216, 0.34);
+      }
+      html[data-theme="dark"] .button-primary:hover { background: linear-gradient(135deg, #ff77e3, #b17aff); }
+      html[data-theme="dark"] .button-outline,
+      html[data-theme="dark"] .viewer-button { background: #18112f; border-color: #4d3d78; color: #d7caff; }
+      html[data-theme="dark"] .button-outline:hover,
+      html[data-theme="dark"] .viewer-button:hover { border-color: #54dfff; color: #54dfff; }
+      html[data-theme="dark"] #clear-all-desktop.button-outline {
+        background: #18112f;
+        border-color: #4d3d78;
+        color: #d7caff;
+      }
+      html[data-theme="dark"] #clear-all-desktop.button-outline:hover {
+        background: #261946;
+        border-color: #54dfff;
+        color: #54dfff;
+      }
+      html[data-theme="dark"] .toolrail { background: #0e0920; border-right-color: var(--border); }
+      html[data-theme="dark"] .tool,
+      html[data-theme="dark"] .switch-row,
+      html[data-theme="dark"] .mode-switch { color: #b9acd9; }
+      html[data-theme="dark"] .tool:hover,
+      html[data-theme="dark"] .mode-switch:hover { background: #1c1438; color: #fff; }
+      html[data-theme="dark"] .tool.active { background: #27163f; border-color: #713a87; color: #fff; box-shadow: inset 0 0 16px rgba(255, 79, 216, 0.1); }
+      html[data-theme="dark"] .tool kbd { color: #a69cc5; background: #17102d; border-color: #49396f; }
+      html[data-theme="dark"] .rail-separator { background: var(--border); }
+      html[data-theme="dark"] .rail-tip strong { color: #d5c8f1; }
+      html[data-theme="dark"] .rail-tip p { color: #9285b4; }
+      html[data-theme="dark"] .workspace h1,
+      html[data-theme="dark"] .results-heading h2 { color: #f4efff; }
+      html[data-theme="dark"] .drawing-card,
+      html[data-theme="dark"] .viewer-card,
+      html[data-theme="dark"] .all-views-card { background: var(--paper); border-color: var(--border); }
+      html[data-theme="dark"] .drawing-card h2,
+      html[data-theme="dark"] .viewer-card h3 { color: #e8ddff; }
+      html[data-theme="dark"] .drawing-card .svg-wrap,
+      html[data-theme="dark"] .all-views-scroll { background: #100b24; }
+      html[data-theme="dark"] .drawing-card > footer,
+      html[data-theme="dark"] .viewer-card > footer { background: #100b24; border-top-color: var(--border); color: #9285b4; }
+      html[data-theme="dark"] .view-code { color: #54dfff; background: #152f4c; }
+      html[data-theme="dark"] .view-code.amber { color: #ffc857; background: #3d2c25; }
+      html[data-theme="dark"] .view-code.blue { color: #54dfff; background: #153c4c; }
+      html[data-theme="dark"] .dimensions { color: #9285b4; }
+      html[data-theme="dark"] .projection-note { color: #9c8fc3; }
+      html[data-theme="dark"] .projection-note strong { color: #d5c8f1; }
+      html[data-theme="dark"] .projection-symbol i,
+      html[data-theme="dark"] .projection-symbol b { border-color: #7867a1; }
+      html[data-theme="dark"] .status.waiting { color: #ffc857; background: #392d1c; }
+      html[data-theme="dark"] .status.ready { color: #76f5c0; background: #16392f; }
+      html[data-theme="dark"] .status.error { color: #ff8d9d; background: #3b1c2a; }
+      html[data-theme="dark"] .viewer { background: #0d0a1e; }
+      html[data-theme="dark"] .interactive .viewer { background: #120d28; }
+      html[data-theme="dark"] .mouse-hint { color: #b8abd7; background: rgba(21, 16, 43, 0.9); border-color: #4d3d78; }
+      html[data-theme="dark"] .app-footer { background: #0b0718; color: #9c8fc3; border-top: 1px solid #2a2148; }
+      html[data-theme="dark"] .app-footer b { color: #d5c8f1; }
+      html[data-theme="dark"] .clear-menu-panel,
+      html[data-theme="dark"] .mobile-menu-panel { background: #17102d; border-color: var(--border); }
+      html[data-theme="dark"] .clear-menu-panel button,
+      html[data-theme="dark"] .mobile-menu-panel button { color: #c6b9e8; }
+      html[data-theme="dark"] .clear-menu-panel button:hover,
+      html[data-theme="dark"] .mobile-menu-panel button:hover { background: #261946; color: #fff; }
+      html[data-theme="dark"] .mobile-navbars { background: #0b0718; }
+      html[data-theme="dark"] .mobile-menu-trigger,
+      html[data-theme="dark"] .mobile-menu.open .mobile-menu-trigger {
+        background: #17102d;
+        border: 1px solid #332957;
+        color: #f4efff;
+      }
+      html[data-theme="dark"] .mobile-menu-panel button.active,
+      html[data-theme="dark"] .mobile-menu-panel button.mobile-toggle.active,
+      html[data-theme="dark"] .mobile-menu-panel button.mobile-view.active,
+      html[data-theme="dark"] .mobile-menu-panel button.mobile-tool.active {
+        background: #27163f;
+        border: 1px solid #ff4fd8;
+        box-shadow: inset 0 0 16px rgba(255, 79, 216, 0.12);
+        color: #fff;
+      }
+      html[data-theme="dark"] .toast { background: #29163e; border: 1px solid #704184; }
+      html[data-theme="dark"] .theme-toggle::before { content: "☀"; }
+      html[data-theme="light"] .theme-toggle::before { content: "☾"; }
+      .theme-toggle::before { margin-right: 6px; }
+      .theme-toggle { white-space: nowrap; }
+      html:not(.mobile-mode) .theme-toggle {
+        width: 92px;
+        flex: 0 0 92px;
+      }
+      .toolrail .theme-toggle {
+        width: 100%;
+        flex: 0 0 auto;
+        justify-content: flex-start;
+        margin-top: 14px;
+        padding: 0 10px;
+      }
     </style>
   </head>
   <body>
@@ -3912,6 +4170,7 @@ ${o}
             <button data-mobile-action="open">Abrir</button>
             <button data-mobile-action="save">Salvar JSON</button>
             <button data-mobile-action="pdf">Exportar PDF</button>
+            <button class="theme-toggle" data-theme-toggle type="button">Tema</button>
             <button id="switch-desktop" data-mobile-action="desktop">
               ↔ Modo desktop
             </button>
@@ -3954,6 +4213,14 @@ ${o}
           <input id="show-projectors" type="checkbox" />
           <i></i>
         </label>
+
+        <button
+          class="button button-quiet theme-toggle"
+          data-theme-toggle
+          type="button"
+          aria-label="Alternar tema"
+          title="Alternar tema"
+        >Tema</button>
 
         <button id="switch-mobile" class="mode-switch" type="button">
           <span aria-hidden="true">↔</span> Modo mobile
@@ -4145,9 +4412,6 @@ ${o}
             </header>
             <div id="model-viewer" class="viewer">
               <canvas aria-label="Modelo 3D girável com o mouse"></canvas>
-              <div class="mouse-hint">
-                <span>↔</span> Arraste para girar · roda para zoom
-              </div>
             </div>
             <footer>
               <span id="voxel-count">0 células sólidas</span
@@ -4166,5 +4430,28 @@ ${o}
       </footer>
     </div>
     <div id="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const buttons = document.querySelectorAll("[data-theme-toggle]");
+        const updateThemeControls = () => {
+          const isDark = root.dataset.theme !== "light";
+          buttons.forEach((button) => {
+            button.setAttribute("aria-pressed", String(isDark));
+            button.title = isDark ? "Usar tema claro" : "Usar tema escuro";
+            button.textContent = isDark ? "Escuro" : "Claro";
+          });
+        };
+        buttons.forEach((button) => {
+          button.addEventListener("click", () => {
+            const nextTheme = root.dataset.theme === "light" ? "dark" : "light";
+            root.dataset.theme = nextTheme;
+            localStorage.setItem("traco-3d-theme", nextTheme);
+            updateThemeControls();
+          });
+        });
+        updateThemeControls();
+      })();
+    </script>
   </body>
 </html>
