@@ -36,6 +36,7 @@
         DirectionalLight,
         DoubleSide,
         EdgesGeometry,
+        ExtrudeGeometry,
         Float32BufferAttribute,
         Group,
         GridHelper,
@@ -50,6 +51,7 @@
         MeshStandardMaterial,
         OrthographicCamera,
         Scene,
+        Shape,
         ShapeUtils,
         Sphere,
         SphereGeometry,
@@ -75,11 +77,13 @@
       const Ku = MeshStandardMaterial;
       const Ke = Mesh;
       const Lu = EdgesGeometry;
+      const ExtrudeGeo = ExtrudeGeometry;
       const lr = Sphere;
       const Pa = SphereGeometry;
       const Ae = BufferGeometry;
       const ye = Float32BufferAttribute;
       const la = ShapeUtils;
+      const Shape2D = Shape;
       const Xg = mergeGeometries;
       const Yg = mergeVertices;
       const Wg = WebGLRenderer;
@@ -952,7 +956,7 @@
             const i = this.snap(e);
             if (i.x !== this.start.x || i.y !== this.start.y)
               if (this.getTool() === "erase") this.eraseRectangle(this.start, i);
-              else if (this.getTool() === "ellipse") {
+              else if (this.getTool() === "ellipse" || this.getTool() === "ellipse-hidden") {
                 this.onBeforeChange();
                 this.addEllipse(this.start, i, e.shiftKey);
                 this.recompute();
@@ -1086,7 +1090,7 @@
             cy: (t.y + e.y) / 2,
             rx: r,
             ry: s,
-            type: "visible",
+            type: this.getTool() === "ellipse-hidden" ? "hidden" : "visible",
             half: i ? (e.y >= t.y ? "upper" : "lower") : null,
           });
         }
@@ -1235,7 +1239,7 @@
                 i.setAttribute("width", String(Math.abs(this.current.x - this.start.x))),
                 i.setAttribute("height", String(Math.abs(this.current.y - this.start.y))),
                 this.svg.append(i));
-            } else if (this.getTool() === "ellipse") {
+            } else if (this.getTool() === "ellipse" || this.getTool() === "ellipse-hidden") {
               const i = qe("ellipse");
               i.setAttribute("class", "preview-line");
               i.setAttribute("cx", String((this.start.x + this.current.x) / 2));
@@ -1358,11 +1362,13 @@
             g > 0 && !a[g][u] && h(u, g - 1),
             g < r - 1 && !a[g + 1][u] && h(u, g + 1));
         }
-        const d = c.map((f) => f.map((u) => !u));
-        for (const f of a_(s.filter((u) => u.type === "visible")))
-          for (let u = 0; u < r; u += 1)
-            for (let g = 0; g < i; g += 1)
-              c_({ x: g + 0.5, y: u + 0.5 }, f) && (d[u][g] = !0);
+        const d = c.map((f) => f.map((u) => !u)),
+          f = a_(s.filter((u) => u.type === "visible"));
+        for (let u = 0; u < r; u += 1)
+          for (let g = 0; g < i; g += 1) {
+            const m = f.reduce((p, b) => p + (c_({ x: g + 0.5, y: u + 0.5 }, b) ? 1 : 0), 0);
+            m > 0 && (d[u][g] = m % 2 === 1);
+          }
         return d;
       }
       function cs(n) {
@@ -1997,7 +2003,10 @@ ${o}
               }),
               r = new Ke(e, e.userData.hasInnerSurfaces ? [i, h] : i);
             ((r.castShadow = !1), (r.receiveShadow = !1));
-            const s = new ca(new Lu(e, 8), new aa({ color: 1521483 }));
+            const edgeGeometry = e.userData.featureEdges
+              ? (() => { const g = new Ae(); g.setAttribute("position", new ye(e.userData.featureEdges, 3)); return g; })()
+              : new Lu(e, 8),
+              s = new ca(edgeGeometry, new aa({ color: 1521483 }));
             (this.object.add(r, s),
               (this.size = e.boundingSphere?.radius
                 ? e.boundingSphere.radius * 2
@@ -2149,7 +2158,7 @@ ${o}
         Prl = "traco-3d-projectors-v1",
         Erl = "traco-3d-drawing-tool-v1",
         I_ = 80;
-      let Nl = ["visible", "hidden", "ellipse", "erase"].includes(localStorage.getItem(Erl)) ? localStorage.getItem(Erl) : "visible",
+      let Nl = ["visible", "hidden", "ellipse", "ellipse-hidden", "erase"].includes(localStorage.getItem(Erl)) ? localStorage.getItem(Erl) : "visible",
         jn = [],
         ar = [],
         Dc = 0,
@@ -2173,12 +2182,6 @@ ${o}
         },
         Xn = new Ll(Pt("iso-viewer"), "isometric"),
         vi = new Ll(Pt("model-viewer"), "interactive");
-      N_();
-      eo(Nl);
-      P_();
-      F_();
-      X_();
-      zi();
       function to(n, t, e) {
         return new i_({
           svg: Pt(n),
@@ -2273,6 +2276,7 @@ ${o}
             n.key === "Enter" && (n.preventDefault(), Bi.blur(), Vl());
           }),
           Ri.addEventListener("change", V_),
+          window.addEventListener("pagehide", () => xl(!0)),
           window.addEventListener("resize", () => requestAnimationFrame(Ji)),
           new ResizeObserver(() => requestAnimationFrame(Ji)).observe(
             Pt("front-view"),
@@ -2284,7 +2288,7 @@ ${o}
               else if ((n.ctrlKey || n.metaKey) && n.key.toLowerCase() === "y")
                 (n.preventDefault(), qr());
               else if (!n.ctrlKey && !n.metaKey && !n.altKey) {
-                const e = { v: "visible", o: "hidden", c: "ellipse", e: "erase" }[
+                const e = { v: "visible", o: "hidden", c: "ellipse", i: "ellipse-hidden", e: "erase" }[
                   n.key.toLowerCase()
                 ];
                 e && eo(e);
@@ -2535,6 +2539,121 @@ ${o}
         s.computeBoundingBox(); s.computeBoundingSphere(); s.userData.modelKind = "smooth-ellipsoid";
         return { geometry: s, stats: { vertices: s.attributes.position.count, faces: s.index.count / 3 } };
       }
+      function holeProfileConfig(n, t) {
+        if (t === "front") return { bounds: stateExtent(n.top), defaultStart: "max", witnesses: [{ view:n.top, mapped:"x", profile:"x", axis:"y" }, { view:n.side, mapped:"y", profile:"y", axis:"x" }] };
+        if (t === "side") return { bounds: stateExtent(n.top) && { minY:stateExtent(n.top).minX, maxY:stateExtent(n.top).maxX }, defaultStart: "min", witnesses: [{ view:n.top, mapped:"y", profile:"x", axis:"x" }, { view:n.front, mapped:"y", profile:"y", axis:"x" }] };
+        return { bounds: stateExtent(n.front), defaultStart: "min", witnesses: [{ view:n.front, mapped:"x", profile:"x", axis:"y" }, { view:n.side, mapped:"x", profile:"y", axis:"y" }] };
+      }
+      function holeAxisRange(n, t, e) {
+        const i={minX:Math.min(...t.map((p)=>p.x)),maxX:Math.max(...t.map((p)=>p.x)),minY:Math.min(...t.map((p)=>p.y)),maxY:Math.max(...t.map((p)=>p.y))}, r=[];
+        for(const s of e.witnesses) for(const o of s.view.segments.filter((p)=>p.type==="hidden")) {
+          const a1=o[`${s.mapped}1`], a2=o[`${s.mapped}2`], c1=o[`${s.axis}1`], c2=o[`${s.axis}2`], l=s.profile==="x"?i.minX:i.minY, h=s.profile==="x"?i.maxX:i.maxY,
+            d=Math.abs(a1-a2)<1e-6&&a1>=l-.05&&a1<=h+.05, f=Math.abs(c1-c2)<1e-6&&Math.min(a1,a2)<=l+.05&&Math.max(a1,a2)>=h-.05;
+          if(d||f) for(const u of [c1,c2]) u>=e.bounds.minY-1e-6&&u<=e.bounds.maxY+1e-6&&r.push(u);
+        }
+        const s=r.some((p)=>Math.abs(p-e.bounds.minY)<.06), o=r.some((p)=>Math.abs(p-e.bounds.maxY)<.06), a=s&&!o?"min":o&&!s?"max":e.defaultStart,
+          c=a==="min"?e.bounds.minY:e.bounds.maxY, l=a==="min"?e.bounds.maxY:e.bounds.minY,
+          h=r.filter((p)=>Math.abs(p-c)>.06), d=h.length?(a==="min"?Math.max(...h):Math.min(...h)):l;
+        return { start:c, end:Math.max(e.bounds.minY,Math.min(e.bounds.maxY,d)), through:Math.abs(d-l)<.06, side:a };
+      }
+      class CsgVertex {
+        constructor(n,t){this.pos=n;this.normal=t;}
+        clone(){return new CsgVertex(this.pos.clone(),this.normal.clone());}
+        flip(){this.normal.multiplyScalar(-1);}
+        interpolate(n,t){return new CsgVertex(this.pos.clone().lerp(n.pos,t),this.normal.clone().lerp(n.normal,t).normalize());}
+      }
+      class CsgPlane {
+        constructor(n,t){this.normal=n;this.w=t;}
+        static fromPoints(n,t,e){const i=new O().subVectors(t,n).cross(new O().subVectors(e,n)).normalize();return new CsgPlane(i,i.dot(n));}
+        clone(){return new CsgPlane(this.normal.clone(),this.w);}
+        flip(){this.normal.multiplyScalar(-1);this.w=-this.w;}
+        splitPolygon(n,t,e,i,r){let s=0;const o=[];for(const c of n.vertices){const l=this.normal.dot(c.pos)-this.w,h=l<-1e-5?2:l>1e-5?1:0;s|=h;o.push(h);}if(s===0)(this.normal.dot(n.plane.normal)>0?t:e).push(n);else if(s===1)i.push(n);else if(s===2)r.push(n);else{const c=[],l=[];for(let h=0;h<n.vertices.length;h+=1){const d=(h+1)%n.vertices.length,f=o[h],u=o[d],g=n.vertices[h],M=n.vertices[d];f!==2&&c.push(g);f!==1&&l.push(f!==2?g.clone():g);if((f|u)===3){const m=(this.w-this.normal.dot(g.pos))/this.normal.dot(new O().subVectors(M.pos,g.pos)),p=g.interpolate(M,m);c.push(p);l.push(p.clone());}}c.length>=3&&i.push(new CsgPolygon(c));l.length>=3&&r.push(new CsgPolygon(l));}}
+      }
+      class CsgPolygon {
+        constructor(n){this.vertices=n;this.plane=CsgPlane.fromPoints(n[0].pos,n[1].pos,n[2].pos);}
+        clone(){return new CsgPolygon(this.vertices.map((n)=>n.clone()));}
+        flip(){this.vertices.reverse().forEach((n)=>n.flip());this.plane.flip();}
+      }
+      class CsgNode {
+        constructor(n=[]){this.plane=null;this.front=null;this.back=null;this.polygons=[];n.length&&this.build(n);}
+        clone(){const n=new CsgNode();n.plane=this.plane?.clone()??null;n.front=this.front?.clone()??null;n.back=this.back?.clone()??null;n.polygons=this.polygons.map((t)=>t.clone());return n;}
+        invert(){for(const n of this.polygons)n.flip();this.plane?.flip();this.front?.invert();this.back?.invert();[this.front,this.back]=[this.back,this.front];}
+        clipPolygons(n){if(!this.plane)return n.slice();let t=[],e=[];for(const i of n)this.plane.splitPolygon(i,t,e,t,e);this.front&&(t=this.front.clipPolygons(t));e=this.back?this.back.clipPolygons(e):[];return t.concat(e);}
+        clipTo(n){this.polygons=n.clipPolygons(this.polygons);this.front?.clipTo(n);this.back?.clipTo(n);}
+        allPolygons(){return this.polygons.concat(this.front?.allPolygons()??[],this.back?.allPolygons()??[]);}
+        build(n){if(!n.length)return;this.plane??=n[0].plane.clone();const t=[],e=[];for(const i of n)this.plane.splitPolygon(i,this.polygons,this.polygons,t,e);t.length&&(this.front??=new CsgNode(),this.front.build(t));e.length&&(this.back??=new CsgNode(),this.back.build(e));}
+      }
+      function geometryPolygons(n){
+        const t=n.index?n.toNonIndexed():n,e=t.getAttribute("position"),i=t.getAttribute("normal"),r=[];let s=0;
+        for(let o=0;o<e.count;o+=3){const a=[];for(let c=0;c<3;c+=1)a.push(new CsgVertex(new O(e.getX(o+c),e.getY(o+c),e.getZ(o+c)),i?new O(i.getX(o+c),i.getY(o+c),i.getZ(o+c)):new O()));r.push(new CsgPolygon(a));s+=a[0].pos.dot(new O().crossVectors(a[1].pos,a[2].pos));}
+        t!==n&&t.dispose();if(s<0)r.forEach((o)=>o.flip());return r;
+      }
+      function subtractPolygons(n,t){const e=new CsgNode(n.map((r)=>r.clone())),i=new CsgNode(t.map((r)=>r.clone()));e.invert();e.clipTo(i);i.clipTo(e);i.invert();i.clipTo(e);i.invert();e.build(i.allPolygons());e.invert();return e.allPolygons();}
+      function polygonsGeometry(n){const t=[],e=[];for(const i of n)for(let r=2;r<i.vertices.length;r+=1)for(const s of [i.vertices[0],i.vertices[r-1],i.vertices[r]]){t.push(s.pos.x,s.pos.y,s.pos.z);e.push(i.plane.normal.x,i.plane.normal.y,i.plane.normal.z);}const i=new Ae();i.setAttribute("position",new ye(t,3));i.setAttribute("normal",new ye(e,3));const r=Yg(i,1e-5);i.dispose();r.computeVertexNormals();r.computeBoundingBox();r.computeBoundingSphere();return r;}
+      function loopSolidGeometry(n,t,e,i){
+        const r=new Shape2D(n.map((p)=>new Ut(p.x,p.y))),s=Math.abs(i-e),q=new ExtrudeGeo(r,{depth:s,bevelEnabled:!1,steps:1,curveSegments:1}),o=q.index?q.toNonIndexed():q,a=o.getAttribute("position"),c=[];
+        for(let l=0;l<a.count;l+=1){const h={x:a.getX(l),y:a.getY(l)},d=e+(i-e)*(a.getZ(l)/Math.max(s,1e-9)),f=t==="front"?new O(h.x-ce.x/2,ce.z-h.y,ce.y/2-d):t==="side"?new O(d-ce.x/2,ce.z-h.y,ce.y/2-h.x):new O(h.x-ce.x/2,ce.z-d,ce.y/2-h.y);c.push(f.x,f.y,f.z);}
+        o!==q&&q.dispose();o.dispose();const l=new Ae();l.setAttribute("position",new ye(c,3));l.computeVertexNormals();return l;
+      }
+      function viewProfileLoops(n){const t=[...n.segments.filter((e)=>e.type==="visible"),...curvesAsSegments((n.ellipses??[]).filter((e)=>e.type==="visible"),96)],e=closedLoops(t);if(!e.length)return{outer:null,holes:[]};e.sort((i,r)=>Math.abs(loopArea(r))-Math.abs(loopArea(i)));const i=e[0],r=e.slice(1).filter((s)=>{const o=s[0],a=i.reduce((c,l,h)=>{const d=i[(h+1)%i.length];return c+((l.y>o.y)!==(d.y>o.y)&&o.x<((d.x-l.x)*(o.y-l.y))/(d.y-l.y)+l.x?1:0);},0);return a%2===1;});return{outer:i,holes:r};}
+      function viewHoleLoops(n){return viewProfileLoops(n).holes;}
+      function hiddenHorizontalChannels(n){
+        const t=n.segments.filter((p)=>p.type==="hidden"),e=t.filter((p)=>Math.abs(p.y1-p.y2)<1e-6&&Math.abs(p.x1-p.x2)>.05),i=t.filter((p)=>Math.abs(p.x1-p.x2)<1e-6&&Math.abs(p.y1-p.y2)>.05),r=viewProfileLoops(n).outer;
+        if(!r)return[];
+        const s={minX:Math.min(...r.map((p)=>p.x)),maxX:Math.max(...r.map((p)=>p.x))},o=[],a=.06;
+        for(let c=0;c<e.length;c+=1)for(let l=c+1;l<e.length;l+=1){
+          const h=Math.min(e[c].x1,e[c].x2),d=Math.max(e[c].x1,e[c].x2),f=Math.min(e[l].x1,e[l].x2),u=Math.max(e[l].x1,e[l].x2);
+          if(Math.abs(h-f)>a||Math.abs(d-u)>a)continue;
+          const g=Math.min(e[c].y1,e[l].y1),M=Math.max(e[c].y1,e[l].y1);if(M-g<=a)continue;
+          const m=(x)=>i.some((p)=>Math.abs(p.x1-x)<a&&Math.min(p.y1,p.y2)<=g+a&&Math.max(p.y1,p.y2)>=M-a),p=m(h),b=m(d);
+          if(p===b)continue;
+          const v=p?d:h,y=p?"max":"min";
+          if((y==="max"&&Math.abs(v-s.maxX)>a)||(y==="min"&&Math.abs(v-s.minX)>a))continue;
+          o.push({axisMin:h,axisMax:d,crossMin:g,crossMax:M,side:y,start:v,end:p?h:d});
+        }
+        return o.filter((c,l)=>o.findIndex((h)=>Math.abs(h.axisMin-c.axisMin)<a&&Math.abs(h.axisMax-c.axisMax)<a&&Math.abs(h.crossMin-c.crossMin)<a&&Math.abs(h.crossMax-c.crossMax)<a&&h.side===c.side)===l);
+      }
+      function hiddenBoundaryHoles(n){
+        const t=hiddenHorizontalChannels(n.front),e=hiddenHorizontalChannels(n.top),i=[],r=.06;
+        for(const s of t)for(const o of e)if(s.side===o.side&&Math.abs(s.axisMin-o.axisMin)<r&&Math.abs(s.axisMax-o.axisMax)<r){
+          const a=[{x:o.crossMin,y:s.crossMin},{x:o.crossMax,y:s.crossMin},{x:o.crossMax,y:s.crossMax},{x:o.crossMin,y:s.crossMax}];
+          i.push({view:"side",loop:a,start:s.start,end:s.end,through:!1,side:s.side,implicit:!0});
+        }
+        return i;
+      }
+      function multiAxisHolesGeometry(n){
+        const t=[],profiles=[];for(const e of ["front","side","top"]){const i=holeProfileConfig(n,e),r=viewProfileLoops(n[e]);if(!i.bounds)continue;if(r.outer)profiles.push({view:e,loop:r.outer,config:i,score:r.outer.length+10*r.outer.filter((s,o)=>{const a=r.outer[(o+1)%r.outer.length];return Math.abs(a.x-s.x)>1e-6&&Math.abs(a.y-s.y)>1e-6;}).length});for(const s of r.holes)t.push({view:e,loop:s,...holeAxisRange(n,s,i)});}
+        const implicit=hiddenBoundaryHoles(n);t.push(...implicit);
+        if((t.length<2||new Set(t.map((e)=>e.view)).size<2)&&!implicit.length)return null;
+        profiles.sort((e,i)=>i.score-e.score);const e=profiles[0];if(!e)return null;
+        const i=loopSolidGeometry(e.loop,e.view,e.config.bounds.minY,e.config.bounds.maxY);let c=geometryPolygons(i);i.dispose();
+        for(const l of t){const h=loopSolidGeometry(l.loop,l.view,l.start,l.end);c=subtractPolygons(c,geometryPolygons(h));h.dispose();}
+        const l=polygonsGeometry(c),h=[],d=(...p)=>h.push(...p),f=(p,b,v)=>p==="front"?new O(v.x-ce.x/2,ce.z-v.y,ce.y/2-b):p==="side"?new O(b-ce.x/2,ce.z-v.y,ce.y/2-v.x):new O(v.x-ce.x/2,ce.z-b,ce.y/2-v.y);
+        for(const b of [e.config.bounds.minY,e.config.bounds.maxY])for(let v=0;v<e.loop.length;v+=1){const y=f(e.view,b,e.loop[v]),x=f(e.view,b,e.loop[(v+1)%e.loop.length]);d(y.x,y.y,y.z,x.x,x.y,x.z);}
+        for(const b of e.loop){const v=f(e.view,e.config.bounds.minY,b),y=f(e.view,e.config.bounds.maxY,b);d(v.x,v.y,v.z,y.x,y.y,y.z);}
+        for(const p of t)for(const b of [p.start,...(p.through?[p.end]:[])])for(let v=0;v<p.loop.length;v+=1){const y=f(p.view,b,p.loop[v]),x=f(p.view,b,p.loop[(v+1)%p.loop.length]);d(y.x,y.y,y.z,x.x,x.y,x.z);}
+        l.userData.modelKind="multi-axis-holes";l.userData.featureEdges=h;return{geometry:l,stats:{vertices:l.attributes.position.count,faces:(l.index?.count??l.attributes.position.count)/3}};
+      }
+      function profileWithHolesGeometry(n) {
+        for(const t of ["front","side","top"]) {
+          const e=n[t], i=[...e.segments.filter((p)=>p.type==="visible"),...curvesAsSegments((e.ellipses??[]).filter((p)=>p.type==="visible"),96)], r=closedLoops(i);
+          if(r.length<2) continue;
+          r.sort((p,b)=>Math.abs(loopArea(b))-Math.abs(loopArea(p)));
+          const s=r[0], o=r.slice(1).filter((p)=>{const b=p[0],v=s.reduce((y,x,w)=>{const E=s[(w+1)%s.length];return y+((x.y>b.y)!==(E.y>b.y)&&b.x<((E.x-x.x)*(b.y-x.y))/(E.y-x.y)+x.x?1:0);},0);return v%2===1;});
+          if(!o.length) continue;
+          const a=holeProfileConfig(n,t); if(!a.bounds||a.bounds.maxY-a.bounds.minY<=1e-6) continue;
+          const c=o.map((p)=>({loop:p,...holeAxisRange(n,p,a)})), l=c.filter((p)=>p.side==="min"||p.through).map((p)=>p.loop), h=c.filter((p)=>p.side==="max"||p.through).map((p)=>p.loop),
+            d=[],f=[],u=(p,b,v,y)=>p.push(b.x,b.y,b.z,v.x,v.y,v.z,y.x,y.y,y.z),
+            g=(p,b)=>t==="front"?new O(p.x-ce.x/2,ce.z-p.y,ce.y/2-b):t==="side"?new O(b-ce.x/2,ce.z-p.y,ce.y/2-p.x):new O(p.x-ce.x/2,ce.z-b,ce.y/2-p.y),
+            M=(target,contour,holes,depth,reverse)=>{const points=[contour,...holes].flat(),triangles=la.triangulateShape(contour.map((p)=>new Ut(p.x,p.y)),holes.map((p)=>p.map((b)=>new Ut(b.x,b.y))));for(const[p,b,v]of triangles)reverse?u(target,g(points[p],depth),g(points[v],depth),g(points[b],depth)):u(target,g(points[p],depth),g(points[b],depth),g(points[v],depth));},
+            m=(target,loop,q1,q2,inward=!1)=>{for(let p=0;p<loop.length;p+=1){const b=loop[p],v=loop[(p+1)%loop.length],y=g(b,q1),x=g(v,q1),w=g(v,q2),E=g(b,q2);inward?(u(target,y,w,x),u(target,y,E,w)):(u(target,y,x,w),u(target,y,w,E));}};
+          M(d,s,l,a.bounds.minY,!1); M(d,s,h,a.bounds.maxY,!0); m(d,s,a.bounds.minY,a.bounds.maxY,!1);
+          for(const p of c){m(f,p.loop,p.start,p.end,!0);if(!p.through)M(f,p.loop,[],p.end,p.side==="max");}
+          const p=new Ae(),b=[...d,...f]; p.setAttribute("position",new ye(b,3));p.clearGroups();p.addGroup(0,d.length/3,0);if(f.length)p.addGroup(d.length/3,f.length/3,1);p.computeVertexNormals();p.computeBoundingBox();p.computeBoundingSphere();p.userData.modelKind=`${t}-profile-with-depth-holes`;p.userData.hasInnerSurfaces=!0;
+          return{geometry:p,stats:{vertices:b.length/3,faces:b.length/9}};
+        }
+        return null;
+      }
       function smoothExtrusionFromCurves(n) {
         const candidates = ["front", "top", "side"].filter((t) => (n[t].ellipses ?? []).some((e) => e.type === "visible"));
         for (const t of candidates) {
@@ -2578,6 +2697,7 @@ ${o}
         return null;
       }
       function zi() {
+        Vl();
         qi(!1);
         const n = {
             front: Qt.front.getMask(),
@@ -2602,18 +2722,20 @@ ${o}
               top: Qt.top.getState(),
               side: Qt.side.getState(),
             },
-            C = smoothSphereFromViews(e),
-            P = C ? null : smoothExtrusionFromCurves(e),
-            i = C || P ? null : $g(e),
-            r = C || P || i ? null : Zg(e),
-            s = C || P || i || r ? null : Qg(e);
-          if (C || P)
+            C = Dl("esfera/elipsoide", () => smoothSphereFromViews(e)),
+            A = C ? null : Dl("furos em múltiplos eixos", () => multiAxisHolesGeometry(e)),
+            H = C || A ? null : Dl("furo com profundidade", () => profileWithHolesGeometry(e)),
+            P = C || A || H ? null : Dl("perfil curvo", () => smoothExtrusionFromCurves(e)),
+            i = C || A || H || P ? null : Dl("canal chanfrado", () => $g(e)),
+            r = C || A || H || P || i ? null : Dl("prisma de perfil", () => Zg(e)),
+            s = C || A || H || P || i || r ? null : Dl("telhado", () => Qg(e));
+          if (C || A || H || P)
             (qi(!0),
-              Xn.setGeometry((C || P).geometry),
-              vi.setGeometry((C || P).geometry),
-              Bc((C || P).stats.vertices ?? 0, (C || P).stats.faces),
-              kn("ready", C ? "Esfera/elipsoide suave reconstruída" : "Perfil curvo reconstruído"),
-              (C || P).geometry.dispose());
+              Xn.setGeometry((C || A || H || P).geometry),
+              vi.setGeometry((C || A || H || P).geometry),
+              Bc((C || A || H || P).stats.vertices ?? 0, (C || A || H || P).stats.faces),
+              kn("ready", C ? "Esfera/elipsoide suave reconstruída" : A ? "Furos em múltiplos eixos reconstruídos" : H ? "Furo com profundidade reconstruído" : "Perfil curvo reconstruído"),
+              (C || A || H || P).geometry.dispose());
           else if (i)
             (qi(!0),
               Xn.setGeometry(i.geometry),
@@ -2636,8 +2758,17 @@ ${o}
               kn("ready", "Telhado de quatro águas reconstruído"),
               s.geometry.dispose());
           else {
-            const o = qg(e, n.front, n.top, n.side),
-              a = jg(o, e);
+            const o = Dl("reconstrução volumétrica", () => qg(e, n.front, n.top, n.side)),
+              a = o ? Dl("malha volumétrica", () => jg(o, e)) : null;
+            if (!o || !a) {
+              const c = bl(Tl(n.front, n.top, n.side));
+              (Xn.setGeometry(c.geometry),
+                vi.setGeometry(c.geometry),
+                Oc(0, 0),
+                kn("error", "Não foi possível gerar o modelo 3D destas vistas"),
+                c.geometry.dispose());
+              return;
+            }
             (qi(a.stats.voxels > 0 && (Nc(e) || Fc(o, n))),
               Xn.setGeometry(a.geometry),
               vi.setGeometry(a.geometry),
@@ -2654,9 +2785,16 @@ ${o}
           }
         }
         (Wl(),
-          Vl(),
           requestAnimationFrame(Ji),
           document.querySelector(".all-views-card.mobile-active") && Hl());
+      }
+      function Dl(n, t) {
+        try {
+          return t();
+        } catch (e) {
+          console.error(`Falha ao gerar ${n}`, e);
+          return null;
+        }
       }
       function Nc(n) {
         return ["front", "side"].some((t) =>
@@ -2704,11 +2842,13 @@ ${o}
         };
       }
       function ps(n) {
+        (Ql(n), zi());
+      }
+      function Ql(n) {
         ((Bi.value = K_(n.name)),
           Qt.front.setState(n.views.front),
           Qt.top.setState(n.views.top),
-          Qt.side.setState(n.views.side),
-          zi());
+          Qt.side.setState(n.views.side));
       }
       function kl() {
         const n = Hi(),
@@ -2777,15 +2917,24 @@ ${o}
             }));
       }
       function X_() {
-        const n = localStorage.getItem(Ul);
-        if (n)
+        let n = null;
+        try {
+          n = localStorage.getItem(Ul);
+        } catch (e) {
+          console.error("Não foi possível acessar o projeto salvo", e);
+        }
+        if (n) {
           try {
             const e = JSON.parse(n);
             if (Xl(e)) {
-              ps(e);
+              Ql(e);
               return;
             }
-          } catch {}
+            console.error("O projeto salvo possui um formato inválido");
+          } catch (e) {
+            console.error("Não foi possível restaurar o projeto salvo", e);
+          }
+        }
         Bi.value = "Peça ortogonal — exemplo";
         const t = wl();
         (Qt.front.setState(t.front),
@@ -2795,10 +2944,21 @@ ${o}
       function Vl() {
         (window.clearTimeout(Dc),
           (Pt("save-state").textContent = "Salvando…"),
-          (Dc = window.setTimeout(() => {
-            (localStorage.setItem(Ul, JSON.stringify(Hi())),
-              (Pt("save-state").textContent = "Salvo localmente"));
-          }, 220)));
+          xl(!0) &&
+            (Dc = window.setTimeout(() => {
+              Pt("save-state").textContent = "Salvo localmente";
+            }, 220)));
+      }
+      function xl(n = !1) {
+        try {
+          (localStorage.setItem(Ul, JSON.stringify(Hi())),
+            n || (Pt("save-state").textContent = "Salvo localmente"));
+          return !0;
+        } catch (t) {
+          (console.error("Não foi possível salvar o projeto no navegador", t),
+            (Pt("save-state").textContent = "Erro ao salvar"));
+          return !1;
+        }
       }
       function Fc(n, t) {
         const e = {
@@ -3078,6 +3238,12 @@ ${o}
         if (!t) throw new Error(`Elemento #${n} não encontrado`);
         return t;
       }
+      N_();
+      eo(Nl);
+      P_();
+      F_();
+      X_();
+      zi();
     </script>
     <style rel="stylesheet" crossorigin>
       :root {
@@ -3396,6 +3562,7 @@ ${o}
         border-radius: 50%;
         box-sizing: border-box;
       }
+      .ellipse-swatch-hidden { border-style: dashed; }
       .erase-icon {
         width: 27px;
         text-align: center;
@@ -4718,6 +4885,14 @@ ${o}
             </button>
             <button
               class="mobile-tool"
+              data-mobile-tool="ellipse-hidden"
+              aria-pressed="false"
+              title="Arraste a caixa; Shift cria meia elipse invisível"
+            >
+              E. Invisível
+            </button>
+            <button
+              class="mobile-tool"
               data-mobile-tool="erase"
               aria-pressed="false"
             >
@@ -4837,6 +5012,11 @@ ${o}
           <span class="ellipse-swatch" aria-hidden="true"></span>
           <span>Elipse</span>
           <kbd>C</kbd>
+        </button>
+        <button class="tool" data-tool="ellipse-hidden" aria-pressed="false" title="Arraste a caixa; Shift cria meia elipse invisível">
+          <span class="ellipse-swatch ellipse-swatch-hidden" aria-hidden="true"></span>
+          <span>E. Invisível</span>
+          <kbd>I</kbd>
         </button>
         <button class="tool" data-tool="erase" aria-pressed="false">
           <span class="erase-icon" aria-hidden="true">⌫</span>

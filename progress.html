@@ -956,7 +956,7 @@
             const i = this.snap(e);
             if (i.x !== this.start.x || i.y !== this.start.y)
               if (this.getTool() === "erase") this.eraseRectangle(this.start, i);
-              else if (this.getTool() === "ellipse") {
+              else if (this.getTool() === "ellipse" || this.getTool() === "ellipse-hidden") {
                 this.onBeforeChange();
                 this.addEllipse(this.start, i, e.shiftKey);
                 this.recompute();
@@ -1090,7 +1090,7 @@
             cy: (t.y + e.y) / 2,
             rx: r,
             ry: s,
-            type: "visible",
+            type: this.getTool() === "ellipse-hidden" ? "hidden" : "visible",
             half: i ? (e.y >= t.y ? "upper" : "lower") : null,
           });
         }
@@ -1239,7 +1239,7 @@
                 i.setAttribute("width", String(Math.abs(this.current.x - this.start.x))),
                 i.setAttribute("height", String(Math.abs(this.current.y - this.start.y))),
                 this.svg.append(i));
-            } else if (this.getTool() === "ellipse") {
+            } else if (this.getTool() === "ellipse" || this.getTool() === "ellipse-hidden") {
               const i = qe("ellipse");
               i.setAttribute("class", "preview-line");
               i.setAttribute("cx", String((this.start.x + this.current.x) / 2));
@@ -2158,7 +2158,7 @@ ${o}
         Prl = "traco-3d-projectors-v1",
         Erl = "traco-3d-drawing-tool-v1",
         I_ = 80;
-      let Nl = ["visible", "hidden", "ellipse", "erase"].includes(localStorage.getItem(Erl)) ? localStorage.getItem(Erl) : "visible",
+      let Nl = ["visible", "hidden", "ellipse", "ellipse-hidden", "erase"].includes(localStorage.getItem(Erl)) ? localStorage.getItem(Erl) : "visible",
         jn = [],
         ar = [],
         Dc = 0,
@@ -2288,7 +2288,7 @@ ${o}
               else if ((n.ctrlKey || n.metaKey) && n.key.toLowerCase() === "y")
                 (n.preventDefault(), qr());
               else if (!n.ctrlKey && !n.metaKey && !n.altKey) {
-                const e = { v: "visible", o: "hidden", c: "ellipse", e: "erase" }[
+                const e = { v: "visible", o: "hidden", c: "ellipse", i: "ellipse-hidden", e: "erase" }[
                   n.key.toLowerCase()
                 ];
                 e && eo(e);
@@ -2597,9 +2597,34 @@ ${o}
       }
       function viewProfileLoops(n){const t=[...n.segments.filter((e)=>e.type==="visible"),...curvesAsSegments((n.ellipses??[]).filter((e)=>e.type==="visible"),96)],e=closedLoops(t);if(!e.length)return{outer:null,holes:[]};e.sort((i,r)=>Math.abs(loopArea(r))-Math.abs(loopArea(i)));const i=e[0],r=e.slice(1).filter((s)=>{const o=s[0],a=i.reduce((c,l,h)=>{const d=i[(h+1)%i.length];return c+((l.y>o.y)!==(d.y>o.y)&&o.x<((d.x-l.x)*(o.y-l.y))/(d.y-l.y)+l.x?1:0);},0);return a%2===1;});return{outer:i,holes:r};}
       function viewHoleLoops(n){return viewProfileLoops(n).holes;}
+      function hiddenHorizontalChannels(n){
+        const t=n.segments.filter((p)=>p.type==="hidden"),e=t.filter((p)=>Math.abs(p.y1-p.y2)<1e-6&&Math.abs(p.x1-p.x2)>.05),i=t.filter((p)=>Math.abs(p.x1-p.x2)<1e-6&&Math.abs(p.y1-p.y2)>.05),r=viewProfileLoops(n).outer;
+        if(!r)return[];
+        const s={minX:Math.min(...r.map((p)=>p.x)),maxX:Math.max(...r.map((p)=>p.x))},o=[],a=.06;
+        for(let c=0;c<e.length;c+=1)for(let l=c+1;l<e.length;l+=1){
+          const h=Math.min(e[c].x1,e[c].x2),d=Math.max(e[c].x1,e[c].x2),f=Math.min(e[l].x1,e[l].x2),u=Math.max(e[l].x1,e[l].x2);
+          if(Math.abs(h-f)>a||Math.abs(d-u)>a)continue;
+          const g=Math.min(e[c].y1,e[l].y1),M=Math.max(e[c].y1,e[l].y1);if(M-g<=a)continue;
+          const m=(x)=>i.some((p)=>Math.abs(p.x1-x)<a&&Math.min(p.y1,p.y2)<=g+a&&Math.max(p.y1,p.y2)>=M-a),p=m(h),b=m(d);
+          if(p===b)continue;
+          const v=p?d:h,y=p?"max":"min";
+          if((y==="max"&&Math.abs(v-s.maxX)>a)||(y==="min"&&Math.abs(v-s.minX)>a))continue;
+          o.push({axisMin:h,axisMax:d,crossMin:g,crossMax:M,side:y,start:v,end:p?h:d});
+        }
+        return o.filter((c,l)=>o.findIndex((h)=>Math.abs(h.axisMin-c.axisMin)<a&&Math.abs(h.axisMax-c.axisMax)<a&&Math.abs(h.crossMin-c.crossMin)<a&&Math.abs(h.crossMax-c.crossMax)<a&&h.side===c.side)===l);
+      }
+      function hiddenBoundaryHoles(n){
+        const t=hiddenHorizontalChannels(n.front),e=hiddenHorizontalChannels(n.top),i=[],r=.06;
+        for(const s of t)for(const o of e)if(s.side===o.side&&Math.abs(s.axisMin-o.axisMin)<r&&Math.abs(s.axisMax-o.axisMax)<r){
+          const a=[{x:o.crossMin,y:s.crossMin},{x:o.crossMax,y:s.crossMin},{x:o.crossMax,y:s.crossMax},{x:o.crossMin,y:s.crossMax}];
+          i.push({view:"side",loop:a,start:s.start,end:s.end,through:!1,side:s.side,implicit:!0});
+        }
+        return i;
+      }
       function multiAxisHolesGeometry(n){
         const t=[],profiles=[];for(const e of ["front","side","top"]){const i=holeProfileConfig(n,e),r=viewProfileLoops(n[e]);if(!i.bounds)continue;if(r.outer)profiles.push({view:e,loop:r.outer,config:i,score:r.outer.length+10*r.outer.filter((s,o)=>{const a=r.outer[(o+1)%r.outer.length];return Math.abs(a.x-s.x)>1e-6&&Math.abs(a.y-s.y)>1e-6;}).length});for(const s of r.holes)t.push({view:e,loop:s,...holeAxisRange(n,s,i)});}
-        if(t.length<2||new Set(t.map((e)=>e.view)).size<2)return null;
+        const implicit=hiddenBoundaryHoles(n);t.push(...implicit);
+        if((t.length<2||new Set(t.map((e)=>e.view)).size<2)&&!implicit.length)return null;
         profiles.sort((e,i)=>i.score-e.score);const e=profiles[0];if(!e)return null;
         const i=loopSolidGeometry(e.loop,e.view,e.config.bounds.minY,e.config.bounds.maxY);let c=geometryPolygons(i);i.dispose();
         for(const l of t){const h=loopSolidGeometry(l.loop,l.view,l.start,l.end);c=subtractPolygons(c,geometryPolygons(h));h.dispose();}
@@ -3537,6 +3562,7 @@ ${o}
         border-radius: 50%;
         box-sizing: border-box;
       }
+      .ellipse-swatch-hidden { border-style: dashed; }
       .erase-icon {
         width: 27px;
         text-align: center;
@@ -4859,6 +4885,14 @@ ${o}
             </button>
             <button
               class="mobile-tool"
+              data-mobile-tool="ellipse-hidden"
+              aria-pressed="false"
+              title="Arraste a caixa; Shift cria meia elipse invisível"
+            >
+              E. Invisível
+            </button>
+            <button
+              class="mobile-tool"
               data-mobile-tool="erase"
               aria-pressed="false"
             >
@@ -4978,6 +5012,11 @@ ${o}
           <span class="ellipse-swatch" aria-hidden="true"></span>
           <span>Elipse</span>
           <kbd>C</kbd>
+        </button>
+        <button class="tool" data-tool="ellipse-hidden" aria-pressed="false" title="Arraste a caixa; Shift cria meia elipse invisível">
+          <span class="ellipse-swatch ellipse-swatch-hidden" aria-hidden="true"></span>
+          <span>E. Invisível</span>
+          <kbd>I</kbd>
         </button>
         <button class="tool" data-tool="erase" aria-pressed="false">
           <span class="erase-icon" aria-hidden="true">⌫</span>
