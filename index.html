@@ -34,6 +34,7 @@
         BufferGeometry,
         Color,
         DirectionalLight,
+        DoubleSide,
         EdgesGeometry,
         Float32BufferAttribute,
         Group,
@@ -51,6 +52,7 @@
         Scene,
         ShapeUtils,
         Sphere,
+        SphereGeometry,
         SRGBColorSpace,
         Vector2,
         Vector3,
@@ -74,6 +76,7 @@
       const Ke = Mesh;
       const Lu = EdgesGeometry;
       const lr = Sphere;
+      const Pa = SphereGeometry;
       const Ae = BufferGeometry;
       const ye = Float32BufferAttribute;
       const la = ShapeUtils;
@@ -83,6 +86,7 @@
       const wu = Scene;
       const ha = OrthographicCamera;
       const id = DirectionalLight;
+      const Eo = DoubleSide;
       const td = HemisphereLight;
       const sd = GridHelper;
       const Si = Group;
@@ -767,6 +771,48 @@
       }
       const n_ = "http://www.w3.org/2000/svg",
         $e = 2;
+      function curvePoints(n, t = 64) {
+        const e = n.half === "upper" ? Math.PI : 0,
+          i = n.half === "upper" ? Math.PI * 2 : n.half === "lower" ? Math.PI : Math.PI * 2,
+          r = n.half ? Math.ceil(t / 2) : t,
+          s = [];
+        for (let o = 0; o <= r; o += 1) {
+          const a = e + ((i - e) * o) / r;
+          s.push({ x: Math.round((n.cx + Math.cos(a) * n.rx) * 1e9) / 1e9, y: Math.round((n.cy + Math.sin(a) * n.ry) * 1e9) / 1e9 });
+        }
+        if (!n.half) s[s.length - 1] = { ...s[0] };
+        return s;
+      }
+      function curvesAsSegments(n, t = 64) {
+        return (n ?? []).flatMap((e) => {
+          const i = curvePoints(e, t), r = [];
+          for (let s = 1; s < i.length; s += 1)
+            r.push({ id: `${e.id}-${s}`, type: e.type, x1: i[s - 1].x, y1: i[s - 1].y, x2: i[s].x, y2: i[s].y, curveId: e.id });
+          return r;
+        });
+      }
+      function validCurve(n) {
+        const t = (e) => Number.isFinite(e) && Number.isInteger(e * 4);
+        return !!n && ["visible", "hidden"].includes(n.type) &&
+          t(n.cx) && t(n.cy) && t(n.rx) && t(n.ry) && n.rx > 0 && n.ry > 0 &&
+          (!n.half || ["upper", "lower"].includes(n.half));
+      }
+      function maskWithCurves(n, t, e, i) {
+        let r = r_(n, t, [...e, ...curvesAsSegments(i, 48)]);
+        const s = r_(n, t, e);
+        for (const o of i.filter((a) => !a.half && a.type === "visible")) {
+          const a = Math.max(0, Math.min(n * $e - 1, Math.floor(o.cx * $e))),
+            c = Math.max(0, Math.min(t * $e - 1, Math.floor(o.cy * $e))),
+            l = !!s[c]?.[a];
+          for (let h = 0; h < r.length; h += 1)
+            for (let d = 0; d < r[h].length; d += 1) {
+              const f = (d + 0.5) / $e, u = (h + 0.5) / $e,
+                g = ((f - o.cx) / o.rx) ** 2 + ((u - o.cy) / o.ry) ** 2 <= 1;
+              if (g) r[h][d] = !l;
+            }
+        }
+        return r;
+      }
       class i_ {
         cols;
         rows;
@@ -775,6 +821,7 @@
         onBeforeChange;
         onChange;
         segments = [];
+        ellipses = [];
         start = null;
         current = null;
         pointerId = null;
@@ -814,6 +861,7 @@
             cols: this.cols,
             rows: this.rows,
             segments: normalizeSegments(this.segments),
+            ellipses: this.ellipses.map((t) => ({ ...t })),
           };
         }
         setState(t, e = !1) {
@@ -833,11 +881,14 @@
               )
               .map((i) => ({ ...i, id: i.id || crypto.randomUUID() })),
           )),
+            (this.ellipses = (t.ellipses ?? [])
+              .filter((i) => validCurve(i) && i.cx - i.rx >= 0 && i.cx + i.rx <= this.cols && i.cy - i.ry >= 0 && i.cy + i.ry <= this.rows)
+              .map((i) => ({ ...i, id: i.id || crypto.randomUUID() }))),
             this.recompute(),
             e && this.onChange());
         }
         clear() {
-          ((this.segments = []), this.recompute());
+          ((this.segments = []), (this.ellipses = []), this.recompute());
         }
         getMask() {
           return this.mask.map((t) => [...t]);
@@ -901,6 +952,12 @@
             const i = this.snap(e);
             if (i.x !== this.start.x || i.y !== this.start.y)
               if (this.getTool() === "erase") this.eraseRectangle(this.start, i);
+              else if (this.getTool() === "ellipse") {
+                this.onBeforeChange();
+                this.addEllipse(this.start, i, e.shiftKey);
+                this.recompute();
+                this.onChange();
+              }
               else {
                 this.onBeforeChange();
                 this.addSegment(this.start, i, this.getTool());
@@ -1019,6 +1076,20 @@
           });
           this.segments = normalizeSegments([...this.segments, r]);
         }
+        addEllipse(t, e, i = !1) {
+          const r = Math.abs(e.x - t.x) / 2,
+            s = Math.abs(e.y - t.y) / 2;
+          if (!r || !s) return;
+          this.ellipses.push({
+            id: crypto.randomUUID(),
+            cx: (t.x + e.x) / 2,
+            cy: (t.y + e.y) / 2,
+            rx: r,
+            ry: s,
+            type: "visible",
+            half: i ? (e.y >= t.y ? "upper" : "lower") : null,
+          });
+        }
         eraseRectangle(t, e) {
           const i = clipSegmentsOutsideRect(this.segments, {
             x1: Math.min(t.x, e.x),
@@ -1026,13 +1097,29 @@
             x2: Math.max(t.x, e.x),
             y2: Math.max(t.y, e.y),
           });
-          if (!i.changed) return;
+          const r = this.ellipses.filter((n) =>
+            n.cx + n.rx < Math.min(t.x, e.x) || n.cx - n.rx > Math.max(t.x, e.x) ||
+            n.cy + n.ry < Math.min(t.y, e.y) || n.cy - n.ry > Math.max(t.y, e.y));
+          if (!i.changed && r.length === this.ellipses.length) return;
           (this.onBeforeChange(),
             (this.segments = normalizeSegments(i.segments)),
+            (this.ellipses = r),
             this.recompute(),
             this.onChange());
         }
         eraseClickedSegment(t) {
+          const i = this.ellipses.findLast((n) => {
+            const e = Math.abs(Math.hypot((t.x - n.cx) / n.rx, (t.y - n.cy) / n.ry) - 1);
+            if (e > 0.16) return !1;
+            return !n.half || (n.half === "upper" ? t.y <= n.cy : t.y >= n.cy);
+          });
+          if (i) {
+            this.onBeforeChange();
+            this.ellipses = this.ellipses.filter((n) => n.id !== i.id);
+            this.recompute();
+            this.onChange();
+            return;
+          }
           const e = findSegmentAtPoint(this.segments, t, 0.45);
           if (!e) return;
           (this.onBeforeChange(),
@@ -1047,7 +1134,7 @@
             this.onChange());
         }
         recompute() {
-          ((this.mask = r_(this.cols, this.rows, this.segments)),
+          ((this.mask = maskWithCurves(this.cols, this.rows, this.segments, this.ellipses)),
             this.render());
         }
         render() {
@@ -1122,6 +1209,23 @@
               );
             (r.append(s, o), e.append(r));
           }
+          for (const i of this.ellipses) {
+            const r = qe("g"), s = qe(i.half ? "path" : "ellipse"), o = qe(i.half ? "path" : "ellipse");
+            r.setAttribute("role", "button");
+            r.setAttribute("aria-label", i.half ? "Arco de meia elipse" : "Elipse");
+            if (i.half) {
+              const a = curvePoints(i, 32), c = `M ${a.map((l) => `${l.x} ${l.y}`).join(" L ")}`;
+              s.setAttribute("d", c); o.setAttribute("d", c);
+            } else {
+              for (const a of [s, o]) {
+                a.setAttribute("cx", String(i.cx)); a.setAttribute("cy", String(i.cy));
+                a.setAttribute("rx", String(i.rx)); a.setAttribute("ry", String(i.ry));
+              }
+            }
+            s.setAttribute("class", "curve-hit");
+            o.setAttribute("class", `technical-curve ${i.type}`);
+            r.append(s, o); e.append(r);
+          }
           if ((this.svg.append(e), this.start && this.current)) {
             if (this.getTool() === "erase") {
               const i = qe("rect");
@@ -1131,6 +1235,14 @@
                 i.setAttribute("width", String(Math.abs(this.current.x - this.start.x))),
                 i.setAttribute("height", String(Math.abs(this.current.y - this.start.y))),
                 this.svg.append(i));
+            } else if (this.getTool() === "ellipse") {
+              const i = qe("ellipse");
+              i.setAttribute("class", "preview-line");
+              i.setAttribute("cx", String((this.start.x + this.current.x) / 2));
+              i.setAttribute("cy", String((this.start.y + this.current.y) / 2));
+              i.setAttribute("rx", String(Math.abs(this.current.x - this.start.x) / 2));
+              i.setAttribute("ry", String(Math.abs(this.current.y - this.start.y) / 2));
+              this.svg.append(i);
             } else {
               this.svg.append(
                 this.createLine(
@@ -1149,7 +1261,7 @@
                 this.svg.append(i));
             }
           }
-          if (this.segments.length === 0) {
+          if (this.segments.length === 0 && this.ellipses.length === 0) {
             const i = qe("text");
             (i.setAttribute("class", "empty-note"),
               i.setAttribute("x", String(this.cols / 2)),
@@ -1592,12 +1704,9 @@
       }
       function Rs(n) {
         const t = n.view,
-          e =
-            t.segments.length > 0
-              ? t.segments
-              : [{ x1: 0, y1: 0, x2: t.cols, y2: t.rows }],
-          i = e.flatMap((s) => [s.x1, s.x2]),
-          r = e.flatMap((s) => [s.y1, s.y2]),
+          e = stateExtent(t),
+          i = e ? [e.minX, e.maxX] : [0, t.cols],
+          r = e ? [e.minY, e.maxY] : [0, t.rows],
           o = Math.max(Math.max(...i) - Math.min(...i), 1),
           a = Math.max(Math.max(...r) - Math.min(...r), 1);
         return Math.min((n.width - 30) / o, (n.height - 42) / a) * 0.92;
@@ -1605,16 +1714,11 @@
       function Ks(n, t, e, sharedScale) {
         Rl(n, t, e);
         const i = t.view,
-          r =
-            i.segments.length > 0
-              ? i.segments
-              : [{ x1: 0, y1: 0, x2: i.cols, y2: i.rows }],
-          s = r.flatMap((b) => [b.x1, b.x2]),
-          o = r.flatMap((b) => [b.y1, b.y2]),
-          a = Math.min(...s),
-          c = Math.max(...s),
-          l = Math.min(...o),
-          h = Math.max(...o);
+          r = stateExtent(i),
+          a = r?.minX ?? 0,
+          c = r?.maxX ?? i.cols,
+          l = r?.minY ?? 0,
+          h = r?.maxY ?? i.rows;
         ((t.minX = a), (t.maxX = c), (t.minY = l), (t.maxY = h));
         const d = Math.max(c - a, 1),
           f = Math.max(h - l, 1),
@@ -1626,6 +1730,7 @@
           (t.gridY = p - (i.rows - (l + h) / 2) * M),
           (t.gridSize = M));
         for (const b of i.segments) f_(n, t, b);
+        for (const b of i.ellipses ?? []) fCurve(n, t, b);
       }
       function f_(n, t, e) {
         const i = wn(t, e.x1, e.y1),
@@ -1876,11 +1981,21 @@ ${o}
                 color: this.mode === "isometric" ? 14543341 : 5810376,
                 roughness: 0.72,
                 metalness: 0.03,
+                side: Eo,
                 polygonOffset: !0,
                 polygonOffsetFactor: 1,
                 polygonOffsetUnits: 1,
               }),
-              r = new Ke(e, i);
+              h = new Ku({
+                color: this.mode === "isometric" ? 9412776 : 2324899,
+                roughness: 0.86,
+                metalness: 0.01,
+                side: Eo,
+                polygonOffset: !0,
+                polygonOffsetFactor: 1,
+                polygonOffsetUnits: 1,
+              }),
+              r = new Ke(e, e.userData.hasInnerSurfaces ? [i, h] : i);
             ((r.castShadow = !1), (r.receiveShadow = !1));
             const s = new ca(new Lu(e, 8), new aa({ color: 1521483 }));
             (this.object.add(r, s),
@@ -2032,8 +2147,9 @@ ${o}
         Il = "traco-3d-display-mode-v1",
         Ml = "traco-3d-mobile-view-v1",
         Prl = "traco-3d-projectors-v1",
+        Erl = "traco-3d-drawing-tool-v1",
         I_ = 80;
-      let Nl = "visible",
+      let Nl = ["visible", "hidden", "ellipse", "erase"].includes(localStorage.getItem(Erl)) ? localStorage.getItem(Erl) : "visible",
         jn = [],
         ar = [],
         Dc = 0,
@@ -2058,6 +2174,7 @@ ${o}
         Xn = new Ll(Pt("iso-viewer"), "isometric"),
         vi = new Ll(Pt("model-viewer"), "interactive");
       N_();
+      eo(Nl);
       P_();
       F_();
       X_();
@@ -2167,7 +2284,7 @@ ${o}
               else if ((n.ctrlKey || n.metaKey) && n.key.toLowerCase() === "y")
                 (n.preventDefault(), qr());
               else if (!n.ctrlKey && !n.metaKey && !n.altKey) {
-                const e = { v: "visible", o: "hidden", e: "erase" }[
+                const e = { v: "visible", o: "hidden", c: "ellipse", e: "erase" }[
                   n.key.toLowerCase()
                 ];
                 e && eo(e);
@@ -2177,6 +2294,7 @@ ${o}
       }
       function eo(n) {
         ((Nl = n),
+          localStorage.setItem(Erl, n),
           document.documentElement.classList.toggle("erase-active", n === "erase"),
           document.querySelectorAll(".tool").forEach((t) => {
             const e = t.dataset.tool === n;
@@ -2372,6 +2490,93 @@ ${o}
               i.setAttribute("aria-pressed", String(e.checked)));
           }));
       }
+      function fCurve(n, t, e) {
+        const i = curvePoints(e, e.half ? 48 : 72).map((r) => wn(t, r.x, r.y));
+        if (i.length < 2) return;
+        n.push(e.type === "hidden" ? "[5 3] 0 d" : "[] 0 d");
+        n.push(`0.07 0.19 0.27 RG ${e.type === "hidden" ? "1" : "1.7"} w`);
+        n.push(`${Wt(i[0].x)} ${Wt(i[0].y)} m ${i.slice(1).map((r) => `${Wt(r.x)} ${Wt(r.y)} l`).join(" ")} S`);
+        n.push("[] 0 d");
+      }
+      function stateExtent(n) {
+        const t = n.segments.flatMap((e) => [{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }]);
+        for (const e of n.ellipses ?? []) t.push({ x: e.cx - e.rx, y: e.cy - e.ry }, { x: e.cx + e.rx, y: e.cy + e.ry });
+        return t.length ? { minX: Math.min(...t.map((e) => e.x)), maxX: Math.max(...t.map((e) => e.x)), minY: Math.min(...t.map((e) => e.y)), maxY: Math.max(...t.map((e) => e.y)) } : null;
+      }
+      function closedLoops(n) {
+        const t = (p) => `${Math.round(p.x * 1e6)},${Math.round(p.y * 1e6)}`,
+          e = new Map(), i = [];
+        for (const p of n) {
+          const b = { x: p.x1, y: p.y1 }, v = { x: p.x2, y: p.y2 }, y = { ...p, a: b, b: v };
+          i.push(y); e.set(t(b), [...(e.get(t(b)) ?? []), y]); e.set(t(v), [...(e.get(t(v)) ?? []), y]);
+        }
+        const r = new Set(), s = [];
+        for (const p of i) {
+          if (r.has(p)) continue;
+          const b = [p.a], v = t(p.a); let y = p.a, x = p;
+          for (let w = 0; w <= i.length + 1; w += 1) {
+            r.add(x); const E = t(y) === t(x.a) ? x.b : x.a; y = E;
+            if (t(E) === v) { if (b.length >= 3) s.push(b); break; }
+            b.push(E); const R = (e.get(t(E)) ?? []).find((T) => T !== x && !r.has(T));
+            if (!R) break; x = R;
+          }
+        }
+        return s;
+      }
+      function loopArea(n) {
+        return n.reduce((t, e, i) => { const r = n[(i + 1) % n.length]; return t + e.x * r.y - r.x * e.y; }, 0) / 2;
+      }
+      function smoothSphereFromViews(n) {
+        const t = [n.front, n.top, n.side].map((e) => (e.ellipses ?? []).filter((i) => !i.half && i.type === "visible"));
+        if (t.some((e) => e.length !== 1) || [n.front, n.top, n.side].some((e) => e.segments.some((i) => i.type === "visible"))) return null;
+        const [e, i, r] = t.map((o) => o[0]), s = new Pa(1, 64, 40);
+        s.scale(e.rx, e.ry, i.ry);
+        s.translate(e.cx - ce.x / 2, ce.z - e.cy, ce.y / 2 - i.cy);
+        s.computeBoundingBox(); s.computeBoundingSphere(); s.userData.modelKind = "smooth-ellipsoid";
+        return { geometry: s, stats: { vertices: s.attributes.position.count, faces: s.index.count / 3 } };
+      }
+      function smoothExtrusionFromCurves(n) {
+        const candidates = ["front", "top", "side"].filter((t) => (n[t].ellipses ?? []).some((e) => e.type === "visible"));
+        for (const t of candidates) {
+          const e = n[t], i = [...e.segments.filter((a) => a.type === "visible"), ...curvesAsSegments((e.ellipses ?? []).filter((a) => a.type === "visible"), 96)],
+            r = closedLoops(i);
+          if (!r.length) continue;
+          r.sort((a, c) => Math.abs(loopArea(c)) - Math.abs(loopArea(a)));
+          const s = r[0], o = r.slice(1).filter((a) => {
+            const c = a[0], l = s.reduce((h, d, f) => { const u = s[(f + 1) % s.length]; return h + ((d.y > c.y) !== (u.y > c.y) && c.x < ((u.x - d.x) * (c.y - d.y)) / (u.y - d.y) + d.x ? 1 : 0); }, 0); return l % 2 === 1;
+          });
+          const a = t === "front" ? stateExtent(n.top) : t === "top" ? stateExtent(n.front) : stateExtent(n.top);
+          if (!a) continue;
+          let c, l;
+          if (t === "front") { c = ce.y / 2 - a.minY; l = ce.y / 2 - a.maxY; }
+          else if (t === "top") { c = ce.z - a.minY; l = ce.z - a.maxY; }
+          else { c = a.minX - ce.x / 2; l = a.maxX - ce.x / 2; }
+          if (Math.abs(c - l) < 1e-6) continue;
+          const h = [s, ...o], d = h.flat(), f = h.map((u) => u.length),
+            u = la.triangulateShape(s.map((g) => new Ut(g.x, g.y)), o.map((g) => g.map((M) => new Ut(M.x, M.y)))), g = [];
+          const M = (p, b) => t === "front" ? new O(p.x - ce.x / 2, ce.z - p.y, b) : t === "top" ? new O(p.x - ce.x / 2, b, ce.y / 2 - p.y) : new O(b, ce.z - p.y, ce.y / 2 - p.x),
+            m = (p, b, v) => g.push(p.x,p.y,p.z,b.x,b.y,b.z,v.x,v.y,v.z);
+          for (const [p,b,v] of u) { m(M(d[p],c),M(d[v],c),M(d[b],c)); m(M(d[p],l),M(d[b],l),M(d[v],l)); }
+          const capCount = g.length / 3, wallGroups = [];
+          let p = 0, loopIndex = 0;
+          for (const b of f) {
+            const groupStart = g.length / 3;
+            for (let v=0; v<b; v+=1) { const y=d[p+v], x=d[p+(v+1)%b], w=M(y,c), E=M(x,c), R=M(x,l), T=M(y,l); m(w,E,R); m(w,R,T); }
+            wallGroups.push({ start: groupStart, count: g.length / 3 - groupStart, material: loopIndex === 0 ? 0 : 1 });
+            p += b; loopIndex += 1;
+          }
+          const b = new Ae();
+          b.setAttribute("position", new ye(g,3));
+          b.clearGroups();
+          b.addGroup(0, capCount, 0);
+          for (const v of wallGroups) b.addGroup(v.start, v.count, v.material);
+          b.computeVertexNormals(); b.computeBoundingBox(); b.computeBoundingSphere();
+          b.userData.modelKind="smooth-curve-extrusion";
+          b.userData.hasInnerSurfaces = wallGroups.some((v) => v.material === 1);
+          return { geometry:b, stats:{ vertices:d.length*2, faces:g.length/9 } };
+        }
+        return null;
+      }
       function zi() {
         qi(!1);
         const n = {
@@ -2397,10 +2602,19 @@ ${o}
               top: Qt.top.getState(),
               side: Qt.side.getState(),
             },
-            i = $g(e),
-            r = i ? null : Zg(e),
-            s = i || r ? null : Qg(e);
-          if (i)
+            C = smoothSphereFromViews(e),
+            P = C ? null : smoothExtrusionFromCurves(e),
+            i = C || P ? null : $g(e),
+            r = C || P || i ? null : Zg(e),
+            s = C || P || i || r ? null : Qg(e);
+          if (C || P)
+            (qi(!0),
+              Xn.setGeometry((C || P).geometry),
+              vi.setGeometry((C || P).geometry),
+              Bc((C || P).stats.vertices ?? 0, (C || P).stats.faces),
+              kn("ready", C ? "Esfera/elipsoide suave reconstruída" : "Perfil curvo reconstruído"),
+              (C || P).geometry.dispose());
+          else if (i)
             (qi(!0),
               Xn.setGeometry(i.geometry),
               vi.setGeometry(i.geometry),
@@ -3174,6 +3388,13 @@ ${o}
       .line-dashed {
         border-top-style: dashed;
         border-width: 2px;
+      }
+      .ellipse-swatch {
+        width: 25px;
+        height: 15px;
+        border: 2px solid currentColor;
+        border-radius: 50%;
+        box-sizing: border-box;
       }
       .erase-icon {
         width: 27px;
@@ -4157,9 +4378,25 @@ ${o}
         stroke-width: 2;
         stroke-dasharray: 7 5;
       }
+      .technical-curve {
+        fill: none;
+        stroke: #17374b;
+        stroke-width: 3;
+        vector-effect: non-scaling-stroke;
+        cursor: crosshair;
+      }
+      .technical-curve.hidden { stroke-width: 2; stroke-dasharray: 7 5; }
+      .curve-hit {
+        fill: none;
+        stroke: transparent;
+        stroke-width: 14;
+        vector-effect: non-scaling-stroke;
+        pointer-events: stroke;
+      }
       .technical-line:hover {
         stroke: #e18b0d;
       }
+      .technical-curve:hover { stroke: #e18b0d; }
       .line-hit {
         stroke: transparent;
         stroke-width: 13;
@@ -4171,6 +4408,7 @@ ${o}
         cursor: pointer;
       }
       .preview-line {
+        fill: none;
         stroke: #0c9dcb;
         stroke-width: 2;
         stroke-dasharray: 4 3;
@@ -4472,6 +4710,14 @@ ${o}
             </button>
             <button
               class="mobile-tool"
+              data-mobile-tool="ellipse"
+              aria-pressed="false"
+              title="Arraste a caixa; Shift cria meia elipse"
+            >
+              Elipse
+            </button>
+            <button
+              class="mobile-tool"
               data-mobile-tool="erase"
               aria-pressed="false"
             >
@@ -4587,6 +4833,11 @@ ${o}
           <span>Oculta</span>
           <kbd>O</kbd>
         </button>
+        <button class="tool" data-tool="ellipse" aria-pressed="false" title="Arraste a caixa; Shift cria meia elipse">
+          <span class="ellipse-swatch" aria-hidden="true"></span>
+          <span>Elipse</span>
+          <kbd>C</kbd>
+        </button>
         <button class="tool" data-tool="erase" aria-pressed="false">
           <span class="erase-icon" aria-hidden="true">⌫</span>
           <span>Apagar</span>
@@ -4625,8 +4876,8 @@ ${o}
         <div class="rail-tip">
           <strong>Como desenhar</strong>
           <p>
-            Arraste entre pontos do grid, inclusive na diagonal. Meio ponto
-            ativado por padrão.
+            Arraste entre pontos do grid, inclusive na diagonal. Na Elipse, o
+            arrasto define a caixa; segure Shift para desenhar meia elipse.
           </p>
         </div>
       </aside>

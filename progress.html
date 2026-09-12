@@ -34,7 +34,9 @@
         BufferGeometry,
         Color,
         DirectionalLight,
+        DoubleSide,
         EdgesGeometry,
+        ExtrudeGeometry,
         Float32BufferAttribute,
         Group,
         GridHelper,
@@ -49,8 +51,10 @@
         MeshStandardMaterial,
         OrthographicCamera,
         Scene,
+        Shape,
         ShapeUtils,
         Sphere,
+        SphereGeometry,
         SRGBColorSpace,
         Vector2,
         Vector3,
@@ -73,16 +77,20 @@
       const Ku = MeshStandardMaterial;
       const Ke = Mesh;
       const Lu = EdgesGeometry;
+      const ExtrudeGeo = ExtrudeGeometry;
       const lr = Sphere;
+      const Pa = SphereGeometry;
       const Ae = BufferGeometry;
       const ye = Float32BufferAttribute;
       const la = ShapeUtils;
+      const Shape2D = Shape;
       const Xg = mergeGeometries;
       const Yg = mergeVertices;
       const Wg = WebGLRenderer;
       const wu = Scene;
       const ha = OrthographicCamera;
       const id = DirectionalLight;
+      const Eo = DoubleSide;
       const td = HemisphereLight;
       const sd = GridHelper;
       const Si = Group;
@@ -767,6 +775,48 @@
       }
       const n_ = "http://www.w3.org/2000/svg",
         $e = 2;
+      function curvePoints(n, t = 64) {
+        const e = n.half === "upper" ? Math.PI : 0,
+          i = n.half === "upper" ? Math.PI * 2 : n.half === "lower" ? Math.PI : Math.PI * 2,
+          r = n.half ? Math.ceil(t / 2) : t,
+          s = [];
+        for (let o = 0; o <= r; o += 1) {
+          const a = e + ((i - e) * o) / r;
+          s.push({ x: Math.round((n.cx + Math.cos(a) * n.rx) * 1e9) / 1e9, y: Math.round((n.cy + Math.sin(a) * n.ry) * 1e9) / 1e9 });
+        }
+        if (!n.half) s[s.length - 1] = { ...s[0] };
+        return s;
+      }
+      function curvesAsSegments(n, t = 64) {
+        return (n ?? []).flatMap((e) => {
+          const i = curvePoints(e, t), r = [];
+          for (let s = 1; s < i.length; s += 1)
+            r.push({ id: `${e.id}-${s}`, type: e.type, x1: i[s - 1].x, y1: i[s - 1].y, x2: i[s].x, y2: i[s].y, curveId: e.id });
+          return r;
+        });
+      }
+      function validCurve(n) {
+        const t = (e) => Number.isFinite(e) && Number.isInteger(e * 4);
+        return !!n && ["visible", "hidden"].includes(n.type) &&
+          t(n.cx) && t(n.cy) && t(n.rx) && t(n.ry) && n.rx > 0 && n.ry > 0 &&
+          (!n.half || ["upper", "lower"].includes(n.half));
+      }
+      function maskWithCurves(n, t, e, i) {
+        let r = r_(n, t, [...e, ...curvesAsSegments(i, 48)]);
+        const s = r_(n, t, e);
+        for (const o of i.filter((a) => !a.half && a.type === "visible")) {
+          const a = Math.max(0, Math.min(n * $e - 1, Math.floor(o.cx * $e))),
+            c = Math.max(0, Math.min(t * $e - 1, Math.floor(o.cy * $e))),
+            l = !!s[c]?.[a];
+          for (let h = 0; h < r.length; h += 1)
+            for (let d = 0; d < r[h].length; d += 1) {
+              const f = (d + 0.5) / $e, u = (h + 0.5) / $e,
+                g = ((f - o.cx) / o.rx) ** 2 + ((u - o.cy) / o.ry) ** 2 <= 1;
+              if (g) r[h][d] = !l;
+            }
+        }
+        return r;
+      }
       class i_ {
         cols;
         rows;
@@ -775,6 +825,7 @@
         onBeforeChange;
         onChange;
         segments = [];
+        ellipses = [];
         start = null;
         current = null;
         pointerId = null;
@@ -814,6 +865,7 @@
             cols: this.cols,
             rows: this.rows,
             segments: normalizeSegments(this.segments),
+            ellipses: this.ellipses.map((t) => ({ ...t })),
           };
         }
         setState(t, e = !1) {
@@ -833,11 +885,14 @@
               )
               .map((i) => ({ ...i, id: i.id || crypto.randomUUID() })),
           )),
+            (this.ellipses = (t.ellipses ?? [])
+              .filter((i) => validCurve(i) && i.cx - i.rx >= 0 && i.cx + i.rx <= this.cols && i.cy - i.ry >= 0 && i.cy + i.ry <= this.rows)
+              .map((i) => ({ ...i, id: i.id || crypto.randomUUID() }))),
             this.recompute(),
             e && this.onChange());
         }
         clear() {
-          ((this.segments = []), this.recompute());
+          ((this.segments = []), (this.ellipses = []), this.recompute());
         }
         getMask() {
           return this.mask.map((t) => [...t]);
@@ -901,6 +956,12 @@
             const i = this.snap(e);
             if (i.x !== this.start.x || i.y !== this.start.y)
               if (this.getTool() === "erase") this.eraseRectangle(this.start, i);
+              else if (this.getTool() === "ellipse") {
+                this.onBeforeChange();
+                this.addEllipse(this.start, i, e.shiftKey);
+                this.recompute();
+                this.onChange();
+              }
               else {
                 this.onBeforeChange();
                 this.addSegment(this.start, i, this.getTool());
@@ -1019,6 +1080,20 @@
           });
           this.segments = normalizeSegments([...this.segments, r]);
         }
+        addEllipse(t, e, i = !1) {
+          const r = Math.abs(e.x - t.x) / 2,
+            s = Math.abs(e.y - t.y) / 2;
+          if (!r || !s) return;
+          this.ellipses.push({
+            id: crypto.randomUUID(),
+            cx: (t.x + e.x) / 2,
+            cy: (t.y + e.y) / 2,
+            rx: r,
+            ry: s,
+            type: "visible",
+            half: i ? (e.y >= t.y ? "upper" : "lower") : null,
+          });
+        }
         eraseRectangle(t, e) {
           const i = clipSegmentsOutsideRect(this.segments, {
             x1: Math.min(t.x, e.x),
@@ -1026,13 +1101,29 @@
             x2: Math.max(t.x, e.x),
             y2: Math.max(t.y, e.y),
           });
-          if (!i.changed) return;
+          const r = this.ellipses.filter((n) =>
+            n.cx + n.rx < Math.min(t.x, e.x) || n.cx - n.rx > Math.max(t.x, e.x) ||
+            n.cy + n.ry < Math.min(t.y, e.y) || n.cy - n.ry > Math.max(t.y, e.y));
+          if (!i.changed && r.length === this.ellipses.length) return;
           (this.onBeforeChange(),
             (this.segments = normalizeSegments(i.segments)),
+            (this.ellipses = r),
             this.recompute(),
             this.onChange());
         }
         eraseClickedSegment(t) {
+          const i = this.ellipses.findLast((n) => {
+            const e = Math.abs(Math.hypot((t.x - n.cx) / n.rx, (t.y - n.cy) / n.ry) - 1);
+            if (e > 0.16) return !1;
+            return !n.half || (n.half === "upper" ? t.y <= n.cy : t.y >= n.cy);
+          });
+          if (i) {
+            this.onBeforeChange();
+            this.ellipses = this.ellipses.filter((n) => n.id !== i.id);
+            this.recompute();
+            this.onChange();
+            return;
+          }
           const e = findSegmentAtPoint(this.segments, t, 0.45);
           if (!e) return;
           (this.onBeforeChange(),
@@ -1047,7 +1138,7 @@
             this.onChange());
         }
         recompute() {
-          ((this.mask = r_(this.cols, this.rows, this.segments)),
+          ((this.mask = maskWithCurves(this.cols, this.rows, this.segments, this.ellipses)),
             this.render());
         }
         render() {
@@ -1122,6 +1213,23 @@
               );
             (r.append(s, o), e.append(r));
           }
+          for (const i of this.ellipses) {
+            const r = qe("g"), s = qe(i.half ? "path" : "ellipse"), o = qe(i.half ? "path" : "ellipse");
+            r.setAttribute("role", "button");
+            r.setAttribute("aria-label", i.half ? "Arco de meia elipse" : "Elipse");
+            if (i.half) {
+              const a = curvePoints(i, 32), c = `M ${a.map((l) => `${l.x} ${l.y}`).join(" L ")}`;
+              s.setAttribute("d", c); o.setAttribute("d", c);
+            } else {
+              for (const a of [s, o]) {
+                a.setAttribute("cx", String(i.cx)); a.setAttribute("cy", String(i.cy));
+                a.setAttribute("rx", String(i.rx)); a.setAttribute("ry", String(i.ry));
+              }
+            }
+            s.setAttribute("class", "curve-hit");
+            o.setAttribute("class", `technical-curve ${i.type}`);
+            r.append(s, o); e.append(r);
+          }
           if ((this.svg.append(e), this.start && this.current)) {
             if (this.getTool() === "erase") {
               const i = qe("rect");
@@ -1131,6 +1239,14 @@
                 i.setAttribute("width", String(Math.abs(this.current.x - this.start.x))),
                 i.setAttribute("height", String(Math.abs(this.current.y - this.start.y))),
                 this.svg.append(i));
+            } else if (this.getTool() === "ellipse") {
+              const i = qe("ellipse");
+              i.setAttribute("class", "preview-line");
+              i.setAttribute("cx", String((this.start.x + this.current.x) / 2));
+              i.setAttribute("cy", String((this.start.y + this.current.y) / 2));
+              i.setAttribute("rx", String(Math.abs(this.current.x - this.start.x) / 2));
+              i.setAttribute("ry", String(Math.abs(this.current.y - this.start.y) / 2));
+              this.svg.append(i);
             } else {
               this.svg.append(
                 this.createLine(
@@ -1149,7 +1265,7 @@
                 this.svg.append(i));
             }
           }
-          if (this.segments.length === 0) {
+          if (this.segments.length === 0 && this.ellipses.length === 0) {
             const i = qe("text");
             (i.setAttribute("class", "empty-note"),
               i.setAttribute("x", String(this.cols / 2)),
@@ -1246,11 +1362,13 @@
             g > 0 && !a[g][u] && h(u, g - 1),
             g < r - 1 && !a[g + 1][u] && h(u, g + 1));
         }
-        const d = c.map((f) => f.map((u) => !u));
-        for (const f of a_(s.filter((u) => u.type === "visible")))
-          for (let u = 0; u < r; u += 1)
-            for (let g = 0; g < i; g += 1)
-              c_({ x: g + 0.5, y: u + 0.5 }, f) && (d[u][g] = !0);
+        const d = c.map((f) => f.map((u) => !u)),
+          f = a_(s.filter((u) => u.type === "visible"));
+        for (let u = 0; u < r; u += 1)
+          for (let g = 0; g < i; g += 1) {
+            const m = f.reduce((p, b) => p + (c_({ x: g + 0.5, y: u + 0.5 }, b) ? 1 : 0), 0);
+            m > 0 && (d[u][g] = m % 2 === 1);
+          }
         return d;
       }
       function cs(n) {
@@ -1592,12 +1710,9 @@
       }
       function Rs(n) {
         const t = n.view,
-          e =
-            t.segments.length > 0
-              ? t.segments
-              : [{ x1: 0, y1: 0, x2: t.cols, y2: t.rows }],
-          i = e.flatMap((s) => [s.x1, s.x2]),
-          r = e.flatMap((s) => [s.y1, s.y2]),
+          e = stateExtent(t),
+          i = e ? [e.minX, e.maxX] : [0, t.cols],
+          r = e ? [e.minY, e.maxY] : [0, t.rows],
           o = Math.max(Math.max(...i) - Math.min(...i), 1),
           a = Math.max(Math.max(...r) - Math.min(...r), 1);
         return Math.min((n.width - 30) / o, (n.height - 42) / a) * 0.92;
@@ -1605,16 +1720,11 @@
       function Ks(n, t, e, sharedScale) {
         Rl(n, t, e);
         const i = t.view,
-          r =
-            i.segments.length > 0
-              ? i.segments
-              : [{ x1: 0, y1: 0, x2: i.cols, y2: i.rows }],
-          s = r.flatMap((b) => [b.x1, b.x2]),
-          o = r.flatMap((b) => [b.y1, b.y2]),
-          a = Math.min(...s),
-          c = Math.max(...s),
-          l = Math.min(...o),
-          h = Math.max(...o);
+          r = stateExtent(i),
+          a = r?.minX ?? 0,
+          c = r?.maxX ?? i.cols,
+          l = r?.minY ?? 0,
+          h = r?.maxY ?? i.rows;
         ((t.minX = a), (t.maxX = c), (t.minY = l), (t.maxY = h));
         const d = Math.max(c - a, 1),
           f = Math.max(h - l, 1),
@@ -1626,6 +1736,7 @@
           (t.gridY = p - (i.rows - (l + h) / 2) * M),
           (t.gridSize = M));
         for (const b of i.segments) f_(n, t, b);
+        for (const b of i.ellipses ?? []) fCurve(n, t, b);
       }
       function f_(n, t, e) {
         const i = wn(t, e.x1, e.y1),
@@ -1876,13 +1987,26 @@ ${o}
                 color: this.mode === "isometric" ? 14543341 : 5810376,
                 roughness: 0.72,
                 metalness: 0.03,
+                side: Eo,
                 polygonOffset: !0,
                 polygonOffsetFactor: 1,
                 polygonOffsetUnits: 1,
               }),
-              r = new Ke(e, i);
+              h = new Ku({
+                color: this.mode === "isometric" ? 9412776 : 2324899,
+                roughness: 0.86,
+                metalness: 0.01,
+                side: Eo,
+                polygonOffset: !0,
+                polygonOffsetFactor: 1,
+                polygonOffsetUnits: 1,
+              }),
+              r = new Ke(e, e.userData.hasInnerSurfaces ? [i, h] : i);
             ((r.castShadow = !1), (r.receiveShadow = !1));
-            const s = new ca(new Lu(e, 8), new aa({ color: 1521483 }));
+            const edgeGeometry = e.userData.featureEdges
+              ? (() => { const g = new Ae(); g.setAttribute("position", new ye(e.userData.featureEdges, 3)); return g; })()
+              : new Lu(e, 8),
+              s = new ca(edgeGeometry, new aa({ color: 1521483 }));
             (this.object.add(r, s),
               (this.size = e.boundingSphere?.radius
                 ? e.boundingSphere.radius * 2
@@ -2032,8 +2156,9 @@ ${o}
         Il = "traco-3d-display-mode-v1",
         Ml = "traco-3d-mobile-view-v1",
         Prl = "traco-3d-projectors-v1",
+        Erl = "traco-3d-drawing-tool-v1",
         I_ = 80;
-      let Nl = "visible",
+      let Nl = ["visible", "hidden", "ellipse", "erase"].includes(localStorage.getItem(Erl)) ? localStorage.getItem(Erl) : "visible",
         jn = [],
         ar = [],
         Dc = 0,
@@ -2057,11 +2182,6 @@ ${o}
         },
         Xn = new Ll(Pt("iso-viewer"), "isometric"),
         vi = new Ll(Pt("model-viewer"), "interactive");
-      N_();
-      P_();
-      F_();
-      X_();
-      zi();
       function to(n, t, e) {
         return new i_({
           svg: Pt(n),
@@ -2156,6 +2276,7 @@ ${o}
             n.key === "Enter" && (n.preventDefault(), Bi.blur(), Vl());
           }),
           Ri.addEventListener("change", V_),
+          window.addEventListener("pagehide", () => xl(!0)),
           window.addEventListener("resize", () => requestAnimationFrame(Ji)),
           new ResizeObserver(() => requestAnimationFrame(Ji)).observe(
             Pt("front-view"),
@@ -2167,7 +2288,7 @@ ${o}
               else if ((n.ctrlKey || n.metaKey) && n.key.toLowerCase() === "y")
                 (n.preventDefault(), qr());
               else if (!n.ctrlKey && !n.metaKey && !n.altKey) {
-                const e = { v: "visible", o: "hidden", e: "erase" }[
+                const e = { v: "visible", o: "hidden", c: "ellipse", e: "erase" }[
                   n.key.toLowerCase()
                 ];
                 e && eo(e);
@@ -2177,6 +2298,7 @@ ${o}
       }
       function eo(n) {
         ((Nl = n),
+          localStorage.setItem(Erl, n),
           document.documentElement.classList.toggle("erase-active", n === "erase"),
           document.querySelectorAll(".tool").forEach((t) => {
             const e = t.dataset.tool === n;
@@ -2372,7 +2494,185 @@ ${o}
               i.setAttribute("aria-pressed", String(e.checked)));
           }));
       }
+      function fCurve(n, t, e) {
+        const i = curvePoints(e, e.half ? 48 : 72).map((r) => wn(t, r.x, r.y));
+        if (i.length < 2) return;
+        n.push(e.type === "hidden" ? "[5 3] 0 d" : "[] 0 d");
+        n.push(`0.07 0.19 0.27 RG ${e.type === "hidden" ? "1" : "1.7"} w`);
+        n.push(`${Wt(i[0].x)} ${Wt(i[0].y)} m ${i.slice(1).map((r) => `${Wt(r.x)} ${Wt(r.y)} l`).join(" ")} S`);
+        n.push("[] 0 d");
+      }
+      function stateExtent(n) {
+        const t = n.segments.flatMap((e) => [{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }]);
+        for (const e of n.ellipses ?? []) t.push({ x: e.cx - e.rx, y: e.cy - e.ry }, { x: e.cx + e.rx, y: e.cy + e.ry });
+        return t.length ? { minX: Math.min(...t.map((e) => e.x)), maxX: Math.max(...t.map((e) => e.x)), minY: Math.min(...t.map((e) => e.y)), maxY: Math.max(...t.map((e) => e.y)) } : null;
+      }
+      function closedLoops(n) {
+        const t = (p) => `${Math.round(p.x * 1e6)},${Math.round(p.y * 1e6)}`,
+          e = new Map(), i = [];
+        for (const p of n) {
+          const b = { x: p.x1, y: p.y1 }, v = { x: p.x2, y: p.y2 }, y = { ...p, a: b, b: v };
+          i.push(y); e.set(t(b), [...(e.get(t(b)) ?? []), y]); e.set(t(v), [...(e.get(t(v)) ?? []), y]);
+        }
+        const r = new Set(), s = [];
+        for (const p of i) {
+          if (r.has(p)) continue;
+          const b = [p.a], v = t(p.a); let y = p.a, x = p;
+          for (let w = 0; w <= i.length + 1; w += 1) {
+            r.add(x); const E = t(y) === t(x.a) ? x.b : x.a; y = E;
+            if (t(E) === v) { if (b.length >= 3) s.push(b); break; }
+            b.push(E); const R = (e.get(t(E)) ?? []).find((T) => T !== x && !r.has(T));
+            if (!R) break; x = R;
+          }
+        }
+        return s;
+      }
+      function loopArea(n) {
+        return n.reduce((t, e, i) => { const r = n[(i + 1) % n.length]; return t + e.x * r.y - r.x * e.y; }, 0) / 2;
+      }
+      function smoothSphereFromViews(n) {
+        const t = [n.front, n.top, n.side].map((e) => (e.ellipses ?? []).filter((i) => !i.half && i.type === "visible"));
+        if (t.some((e) => e.length !== 1) || [n.front, n.top, n.side].some((e) => e.segments.some((i) => i.type === "visible"))) return null;
+        const [e, i, r] = t.map((o) => o[0]), s = new Pa(1, 64, 40);
+        s.scale(e.rx, e.ry, i.ry);
+        s.translate(e.cx - ce.x / 2, ce.z - e.cy, ce.y / 2 - i.cy);
+        s.computeBoundingBox(); s.computeBoundingSphere(); s.userData.modelKind = "smooth-ellipsoid";
+        return { geometry: s, stats: { vertices: s.attributes.position.count, faces: s.index.count / 3 } };
+      }
+      function holeProfileConfig(n, t) {
+        if (t === "front") return { bounds: stateExtent(n.top), defaultStart: "max", witnesses: [{ view:n.top, mapped:"x", profile:"x", axis:"y" }, { view:n.side, mapped:"y", profile:"y", axis:"x" }] };
+        if (t === "side") return { bounds: stateExtent(n.top) && { minY:stateExtent(n.top).minX, maxY:stateExtent(n.top).maxX }, defaultStart: "min", witnesses: [{ view:n.top, mapped:"y", profile:"x", axis:"x" }, { view:n.front, mapped:"y", profile:"y", axis:"x" }] };
+        return { bounds: stateExtent(n.front), defaultStart: "min", witnesses: [{ view:n.front, mapped:"x", profile:"x", axis:"y" }, { view:n.side, mapped:"x", profile:"y", axis:"y" }] };
+      }
+      function holeAxisRange(n, t, e) {
+        const i={minX:Math.min(...t.map((p)=>p.x)),maxX:Math.max(...t.map((p)=>p.x)),minY:Math.min(...t.map((p)=>p.y)),maxY:Math.max(...t.map((p)=>p.y))}, r=[];
+        for(const s of e.witnesses) for(const o of s.view.segments.filter((p)=>p.type==="hidden")) {
+          const a1=o[`${s.mapped}1`], a2=o[`${s.mapped}2`], c1=o[`${s.axis}1`], c2=o[`${s.axis}2`], l=s.profile==="x"?i.minX:i.minY, h=s.profile==="x"?i.maxX:i.maxY,
+            d=Math.abs(a1-a2)<1e-6&&a1>=l-.05&&a1<=h+.05, f=Math.abs(c1-c2)<1e-6&&Math.min(a1,a2)<=l+.05&&Math.max(a1,a2)>=h-.05;
+          if(d||f) for(const u of [c1,c2]) u>=e.bounds.minY-1e-6&&u<=e.bounds.maxY+1e-6&&r.push(u);
+        }
+        const s=r.some((p)=>Math.abs(p-e.bounds.minY)<.06), o=r.some((p)=>Math.abs(p-e.bounds.maxY)<.06), a=s&&!o?"min":o&&!s?"max":e.defaultStart,
+          c=a==="min"?e.bounds.minY:e.bounds.maxY, l=a==="min"?e.bounds.maxY:e.bounds.minY,
+          h=r.filter((p)=>Math.abs(p-c)>.06), d=h.length?(a==="min"?Math.max(...h):Math.min(...h)):l;
+        return { start:c, end:Math.max(e.bounds.minY,Math.min(e.bounds.maxY,d)), through:Math.abs(d-l)<.06, side:a };
+      }
+      class CsgVertex {
+        constructor(n,t){this.pos=n;this.normal=t;}
+        clone(){return new CsgVertex(this.pos.clone(),this.normal.clone());}
+        flip(){this.normal.multiplyScalar(-1);}
+        interpolate(n,t){return new CsgVertex(this.pos.clone().lerp(n.pos,t),this.normal.clone().lerp(n.normal,t).normalize());}
+      }
+      class CsgPlane {
+        constructor(n,t){this.normal=n;this.w=t;}
+        static fromPoints(n,t,e){const i=new O().subVectors(t,n).cross(new O().subVectors(e,n)).normalize();return new CsgPlane(i,i.dot(n));}
+        clone(){return new CsgPlane(this.normal.clone(),this.w);}
+        flip(){this.normal.multiplyScalar(-1);this.w=-this.w;}
+        splitPolygon(n,t,e,i,r){let s=0;const o=[];for(const c of n.vertices){const l=this.normal.dot(c.pos)-this.w,h=l<-1e-5?2:l>1e-5?1:0;s|=h;o.push(h);}if(s===0)(this.normal.dot(n.plane.normal)>0?t:e).push(n);else if(s===1)i.push(n);else if(s===2)r.push(n);else{const c=[],l=[];for(let h=0;h<n.vertices.length;h+=1){const d=(h+1)%n.vertices.length,f=o[h],u=o[d],g=n.vertices[h],M=n.vertices[d];f!==2&&c.push(g);f!==1&&l.push(f!==2?g.clone():g);if((f|u)===3){const m=(this.w-this.normal.dot(g.pos))/this.normal.dot(new O().subVectors(M.pos,g.pos)),p=g.interpolate(M,m);c.push(p);l.push(p.clone());}}c.length>=3&&i.push(new CsgPolygon(c));l.length>=3&&r.push(new CsgPolygon(l));}}
+      }
+      class CsgPolygon {
+        constructor(n){this.vertices=n;this.plane=CsgPlane.fromPoints(n[0].pos,n[1].pos,n[2].pos);}
+        clone(){return new CsgPolygon(this.vertices.map((n)=>n.clone()));}
+        flip(){this.vertices.reverse().forEach((n)=>n.flip());this.plane.flip();}
+      }
+      class CsgNode {
+        constructor(n=[]){this.plane=null;this.front=null;this.back=null;this.polygons=[];n.length&&this.build(n);}
+        clone(){const n=new CsgNode();n.plane=this.plane?.clone()??null;n.front=this.front?.clone()??null;n.back=this.back?.clone()??null;n.polygons=this.polygons.map((t)=>t.clone());return n;}
+        invert(){for(const n of this.polygons)n.flip();this.plane?.flip();this.front?.invert();this.back?.invert();[this.front,this.back]=[this.back,this.front];}
+        clipPolygons(n){if(!this.plane)return n.slice();let t=[],e=[];for(const i of n)this.plane.splitPolygon(i,t,e,t,e);this.front&&(t=this.front.clipPolygons(t));e=this.back?this.back.clipPolygons(e):[];return t.concat(e);}
+        clipTo(n){this.polygons=n.clipPolygons(this.polygons);this.front?.clipTo(n);this.back?.clipTo(n);}
+        allPolygons(){return this.polygons.concat(this.front?.allPolygons()??[],this.back?.allPolygons()??[]);}
+        build(n){if(!n.length)return;this.plane??=n[0].plane.clone();const t=[],e=[];for(const i of n)this.plane.splitPolygon(i,this.polygons,this.polygons,t,e);t.length&&(this.front??=new CsgNode(),this.front.build(t));e.length&&(this.back??=new CsgNode(),this.back.build(e));}
+      }
+      function geometryPolygons(n){
+        const t=n.index?n.toNonIndexed():n,e=t.getAttribute("position"),i=t.getAttribute("normal"),r=[];let s=0;
+        for(let o=0;o<e.count;o+=3){const a=[];for(let c=0;c<3;c+=1)a.push(new CsgVertex(new O(e.getX(o+c),e.getY(o+c),e.getZ(o+c)),i?new O(i.getX(o+c),i.getY(o+c),i.getZ(o+c)):new O()));r.push(new CsgPolygon(a));s+=a[0].pos.dot(new O().crossVectors(a[1].pos,a[2].pos));}
+        t!==n&&t.dispose();if(s<0)r.forEach((o)=>o.flip());return r;
+      }
+      function subtractPolygons(n,t){const e=new CsgNode(n.map((r)=>r.clone())),i=new CsgNode(t.map((r)=>r.clone()));e.invert();e.clipTo(i);i.clipTo(e);i.invert();i.clipTo(e);i.invert();e.build(i.allPolygons());e.invert();return e.allPolygons();}
+      function polygonsGeometry(n){const t=[],e=[];for(const i of n)for(let r=2;r<i.vertices.length;r+=1)for(const s of [i.vertices[0],i.vertices[r-1],i.vertices[r]]){t.push(s.pos.x,s.pos.y,s.pos.z);e.push(i.plane.normal.x,i.plane.normal.y,i.plane.normal.z);}const i=new Ae();i.setAttribute("position",new ye(t,3));i.setAttribute("normal",new ye(e,3));const r=Yg(i,1e-5);i.dispose();r.computeVertexNormals();r.computeBoundingBox();r.computeBoundingSphere();return r;}
+      function loopSolidGeometry(n,t,e,i){
+        const r=new Shape2D(n.map((p)=>new Ut(p.x,p.y))),s=Math.abs(i-e),q=new ExtrudeGeo(r,{depth:s,bevelEnabled:!1,steps:1,curveSegments:1}),o=q.index?q.toNonIndexed():q,a=o.getAttribute("position"),c=[];
+        for(let l=0;l<a.count;l+=1){const h={x:a.getX(l),y:a.getY(l)},d=e+(i-e)*(a.getZ(l)/Math.max(s,1e-9)),f=t==="front"?new O(h.x-ce.x/2,ce.z-h.y,ce.y/2-d):t==="side"?new O(d-ce.x/2,ce.z-h.y,ce.y/2-h.x):new O(h.x-ce.x/2,ce.z-d,ce.y/2-h.y);c.push(f.x,f.y,f.z);}
+        o!==q&&q.dispose();o.dispose();const l=new Ae();l.setAttribute("position",new ye(c,3));l.computeVertexNormals();return l;
+      }
+      function viewProfileLoops(n){const t=[...n.segments.filter((e)=>e.type==="visible"),...curvesAsSegments((n.ellipses??[]).filter((e)=>e.type==="visible"),96)],e=closedLoops(t);if(!e.length)return{outer:null,holes:[]};e.sort((i,r)=>Math.abs(loopArea(r))-Math.abs(loopArea(i)));const i=e[0],r=e.slice(1).filter((s)=>{const o=s[0],a=i.reduce((c,l,h)=>{const d=i[(h+1)%i.length];return c+((l.y>o.y)!==(d.y>o.y)&&o.x<((d.x-l.x)*(o.y-l.y))/(d.y-l.y)+l.x?1:0);},0);return a%2===1;});return{outer:i,holes:r};}
+      function viewHoleLoops(n){return viewProfileLoops(n).holes;}
+      function multiAxisHolesGeometry(n){
+        const t=[],profiles=[];for(const e of ["front","side","top"]){const i=holeProfileConfig(n,e),r=viewProfileLoops(n[e]);if(!i.bounds)continue;if(r.outer)profiles.push({view:e,loop:r.outer,config:i,score:r.outer.length+10*r.outer.filter((s,o)=>{const a=r.outer[(o+1)%r.outer.length];return Math.abs(a.x-s.x)>1e-6&&Math.abs(a.y-s.y)>1e-6;}).length});for(const s of r.holes)t.push({view:e,loop:s,...holeAxisRange(n,s,i)});}
+        if(t.length<2||new Set(t.map((e)=>e.view)).size<2)return null;
+        profiles.sort((e,i)=>i.score-e.score);const e=profiles[0];if(!e)return null;
+        const i=loopSolidGeometry(e.loop,e.view,e.config.bounds.minY,e.config.bounds.maxY);let c=geometryPolygons(i);i.dispose();
+        for(const l of t){const h=loopSolidGeometry(l.loop,l.view,l.start,l.end);c=subtractPolygons(c,geometryPolygons(h));h.dispose();}
+        const l=polygonsGeometry(c),h=[],d=(...p)=>h.push(...p),f=(p,b,v)=>p==="front"?new O(v.x-ce.x/2,ce.z-v.y,ce.y/2-b):p==="side"?new O(b-ce.x/2,ce.z-v.y,ce.y/2-v.x):new O(v.x-ce.x/2,ce.z-b,ce.y/2-v.y);
+        for(const b of [e.config.bounds.minY,e.config.bounds.maxY])for(let v=0;v<e.loop.length;v+=1){const y=f(e.view,b,e.loop[v]),x=f(e.view,b,e.loop[(v+1)%e.loop.length]);d(y.x,y.y,y.z,x.x,x.y,x.z);}
+        for(const b of e.loop){const v=f(e.view,e.config.bounds.minY,b),y=f(e.view,e.config.bounds.maxY,b);d(v.x,v.y,v.z,y.x,y.y,y.z);}
+        for(const p of t)for(const b of [p.start,...(p.through?[p.end]:[])])for(let v=0;v<p.loop.length;v+=1){const y=f(p.view,b,p.loop[v]),x=f(p.view,b,p.loop[(v+1)%p.loop.length]);d(y.x,y.y,y.z,x.x,x.y,x.z);}
+        l.userData.modelKind="multi-axis-holes";l.userData.featureEdges=h;return{geometry:l,stats:{vertices:l.attributes.position.count,faces:(l.index?.count??l.attributes.position.count)/3}};
+      }
+      function profileWithHolesGeometry(n) {
+        for(const t of ["front","side","top"]) {
+          const e=n[t], i=[...e.segments.filter((p)=>p.type==="visible"),...curvesAsSegments((e.ellipses??[]).filter((p)=>p.type==="visible"),96)], r=closedLoops(i);
+          if(r.length<2) continue;
+          r.sort((p,b)=>Math.abs(loopArea(b))-Math.abs(loopArea(p)));
+          const s=r[0], o=r.slice(1).filter((p)=>{const b=p[0],v=s.reduce((y,x,w)=>{const E=s[(w+1)%s.length];return y+((x.y>b.y)!==(E.y>b.y)&&b.x<((E.x-x.x)*(b.y-x.y))/(E.y-x.y)+x.x?1:0);},0);return v%2===1;});
+          if(!o.length) continue;
+          const a=holeProfileConfig(n,t); if(!a.bounds||a.bounds.maxY-a.bounds.minY<=1e-6) continue;
+          const c=o.map((p)=>({loop:p,...holeAxisRange(n,p,a)})), l=c.filter((p)=>p.side==="min"||p.through).map((p)=>p.loop), h=c.filter((p)=>p.side==="max"||p.through).map((p)=>p.loop),
+            d=[],f=[],u=(p,b,v,y)=>p.push(b.x,b.y,b.z,v.x,v.y,v.z,y.x,y.y,y.z),
+            g=(p,b)=>t==="front"?new O(p.x-ce.x/2,ce.z-p.y,ce.y/2-b):t==="side"?new O(b-ce.x/2,ce.z-p.y,ce.y/2-p.x):new O(p.x-ce.x/2,ce.z-b,ce.y/2-p.y),
+            M=(target,contour,holes,depth,reverse)=>{const points=[contour,...holes].flat(),triangles=la.triangulateShape(contour.map((p)=>new Ut(p.x,p.y)),holes.map((p)=>p.map((b)=>new Ut(b.x,b.y))));for(const[p,b,v]of triangles)reverse?u(target,g(points[p],depth),g(points[v],depth),g(points[b],depth)):u(target,g(points[p],depth),g(points[b],depth),g(points[v],depth));},
+            m=(target,loop,q1,q2,inward=!1)=>{for(let p=0;p<loop.length;p+=1){const b=loop[p],v=loop[(p+1)%loop.length],y=g(b,q1),x=g(v,q1),w=g(v,q2),E=g(b,q2);inward?(u(target,y,w,x),u(target,y,E,w)):(u(target,y,x,w),u(target,y,w,E));}};
+          M(d,s,l,a.bounds.minY,!1); M(d,s,h,a.bounds.maxY,!0); m(d,s,a.bounds.minY,a.bounds.maxY,!1);
+          for(const p of c){m(f,p.loop,p.start,p.end,!0);if(!p.through)M(f,p.loop,[],p.end,p.side==="max");}
+          const p=new Ae(),b=[...d,...f]; p.setAttribute("position",new ye(b,3));p.clearGroups();p.addGroup(0,d.length/3,0);if(f.length)p.addGroup(d.length/3,f.length/3,1);p.computeVertexNormals();p.computeBoundingBox();p.computeBoundingSphere();p.userData.modelKind=`${t}-profile-with-depth-holes`;p.userData.hasInnerSurfaces=!0;
+          return{geometry:p,stats:{vertices:b.length/3,faces:b.length/9}};
+        }
+        return null;
+      }
+      function smoothExtrusionFromCurves(n) {
+        const candidates = ["front", "top", "side"].filter((t) => (n[t].ellipses ?? []).some((e) => e.type === "visible"));
+        for (const t of candidates) {
+          const e = n[t], i = [...e.segments.filter((a) => a.type === "visible"), ...curvesAsSegments((e.ellipses ?? []).filter((a) => a.type === "visible"), 96)],
+            r = closedLoops(i);
+          if (!r.length) continue;
+          r.sort((a, c) => Math.abs(loopArea(c)) - Math.abs(loopArea(a)));
+          const s = r[0], o = r.slice(1).filter((a) => {
+            const c = a[0], l = s.reduce((h, d, f) => { const u = s[(f + 1) % s.length]; return h + ((d.y > c.y) !== (u.y > c.y) && c.x < ((u.x - d.x) * (c.y - d.y)) / (u.y - d.y) + d.x ? 1 : 0); }, 0); return l % 2 === 1;
+          });
+          const a = t === "front" ? stateExtent(n.top) : t === "top" ? stateExtent(n.front) : stateExtent(n.top);
+          if (!a) continue;
+          let c, l;
+          if (t === "front") { c = ce.y / 2 - a.minY; l = ce.y / 2 - a.maxY; }
+          else if (t === "top") { c = ce.z - a.minY; l = ce.z - a.maxY; }
+          else { c = a.minX - ce.x / 2; l = a.maxX - ce.x / 2; }
+          if (Math.abs(c - l) < 1e-6) continue;
+          const h = [s, ...o], d = h.flat(), f = h.map((u) => u.length),
+            u = la.triangulateShape(s.map((g) => new Ut(g.x, g.y)), o.map((g) => g.map((M) => new Ut(M.x, M.y)))), g = [];
+          const M = (p, b) => t === "front" ? new O(p.x - ce.x / 2, ce.z - p.y, b) : t === "top" ? new O(p.x - ce.x / 2, b, ce.y / 2 - p.y) : new O(b, ce.z - p.y, ce.y / 2 - p.x),
+            m = (p, b, v) => g.push(p.x,p.y,p.z,b.x,b.y,b.z,v.x,v.y,v.z);
+          for (const [p,b,v] of u) { m(M(d[p],c),M(d[v],c),M(d[b],c)); m(M(d[p],l),M(d[b],l),M(d[v],l)); }
+          const capCount = g.length / 3, wallGroups = [];
+          let p = 0, loopIndex = 0;
+          for (const b of f) {
+            const groupStart = g.length / 3;
+            for (let v=0; v<b; v+=1) { const y=d[p+v], x=d[p+(v+1)%b], w=M(y,c), E=M(x,c), R=M(x,l), T=M(y,l); m(w,E,R); m(w,R,T); }
+            wallGroups.push({ start: groupStart, count: g.length / 3 - groupStart, material: loopIndex === 0 ? 0 : 1 });
+            p += b; loopIndex += 1;
+          }
+          const b = new Ae();
+          b.setAttribute("position", new ye(g,3));
+          b.clearGroups();
+          b.addGroup(0, capCount, 0);
+          for (const v of wallGroups) b.addGroup(v.start, v.count, v.material);
+          b.computeVertexNormals(); b.computeBoundingBox(); b.computeBoundingSphere();
+          b.userData.modelKind="smooth-curve-extrusion";
+          b.userData.hasInnerSurfaces = wallGroups.some((v) => v.material === 1);
+          return { geometry:b, stats:{ vertices:d.length*2, faces:g.length/9 } };
+        }
+        return null;
+      }
       function zi() {
+        Vl();
         qi(!1);
         const n = {
             front: Qt.front.getMask(),
@@ -2397,10 +2697,21 @@ ${o}
               top: Qt.top.getState(),
               side: Qt.side.getState(),
             },
-            i = $g(e),
-            r = i ? null : Zg(e),
-            s = i || r ? null : Qg(e);
-          if (i)
+            C = Dl("esfera/elipsoide", () => smoothSphereFromViews(e)),
+            A = C ? null : Dl("furos em múltiplos eixos", () => multiAxisHolesGeometry(e)),
+            H = C || A ? null : Dl("furo com profundidade", () => profileWithHolesGeometry(e)),
+            P = C || A || H ? null : Dl("perfil curvo", () => smoothExtrusionFromCurves(e)),
+            i = C || A || H || P ? null : Dl("canal chanfrado", () => $g(e)),
+            r = C || A || H || P || i ? null : Dl("prisma de perfil", () => Zg(e)),
+            s = C || A || H || P || i || r ? null : Dl("telhado", () => Qg(e));
+          if (C || A || H || P)
+            (qi(!0),
+              Xn.setGeometry((C || A || H || P).geometry),
+              vi.setGeometry((C || A || H || P).geometry),
+              Bc((C || A || H || P).stats.vertices ?? 0, (C || A || H || P).stats.faces),
+              kn("ready", C ? "Esfera/elipsoide suave reconstruída" : A ? "Furos em múltiplos eixos reconstruídos" : H ? "Furo com profundidade reconstruído" : "Perfil curvo reconstruído"),
+              (C || A || H || P).geometry.dispose());
+          else if (i)
             (qi(!0),
               Xn.setGeometry(i.geometry),
               vi.setGeometry(i.geometry),
@@ -2422,8 +2733,17 @@ ${o}
               kn("ready", "Telhado de quatro águas reconstruído"),
               s.geometry.dispose());
           else {
-            const o = qg(e, n.front, n.top, n.side),
-              a = jg(o, e);
+            const o = Dl("reconstrução volumétrica", () => qg(e, n.front, n.top, n.side)),
+              a = o ? Dl("malha volumétrica", () => jg(o, e)) : null;
+            if (!o || !a) {
+              const c = bl(Tl(n.front, n.top, n.side));
+              (Xn.setGeometry(c.geometry),
+                vi.setGeometry(c.geometry),
+                Oc(0, 0),
+                kn("error", "Não foi possível gerar o modelo 3D destas vistas"),
+                c.geometry.dispose());
+              return;
+            }
             (qi(a.stats.voxels > 0 && (Nc(e) || Fc(o, n))),
               Xn.setGeometry(a.geometry),
               vi.setGeometry(a.geometry),
@@ -2440,9 +2760,16 @@ ${o}
           }
         }
         (Wl(),
-          Vl(),
           requestAnimationFrame(Ji),
           document.querySelector(".all-views-card.mobile-active") && Hl());
+      }
+      function Dl(n, t) {
+        try {
+          return t();
+        } catch (e) {
+          console.error(`Falha ao gerar ${n}`, e);
+          return null;
+        }
       }
       function Nc(n) {
         return ["front", "side"].some((t) =>
@@ -2490,11 +2817,13 @@ ${o}
         };
       }
       function ps(n) {
+        (Ql(n), zi());
+      }
+      function Ql(n) {
         ((Bi.value = K_(n.name)),
           Qt.front.setState(n.views.front),
           Qt.top.setState(n.views.top),
-          Qt.side.setState(n.views.side),
-          zi());
+          Qt.side.setState(n.views.side));
       }
       function kl() {
         const n = Hi(),
@@ -2563,15 +2892,24 @@ ${o}
             }));
       }
       function X_() {
-        const n = localStorage.getItem(Ul);
-        if (n)
+        let n = null;
+        try {
+          n = localStorage.getItem(Ul);
+        } catch (e) {
+          console.error("Não foi possível acessar o projeto salvo", e);
+        }
+        if (n) {
           try {
             const e = JSON.parse(n);
             if (Xl(e)) {
-              ps(e);
+              Ql(e);
               return;
             }
-          } catch {}
+            console.error("O projeto salvo possui um formato inválido");
+          } catch (e) {
+            console.error("Não foi possível restaurar o projeto salvo", e);
+          }
+        }
         Bi.value = "Peça ortogonal — exemplo";
         const t = wl();
         (Qt.front.setState(t.front),
@@ -2581,10 +2919,21 @@ ${o}
       function Vl() {
         (window.clearTimeout(Dc),
           (Pt("save-state").textContent = "Salvando…"),
-          (Dc = window.setTimeout(() => {
-            (localStorage.setItem(Ul, JSON.stringify(Hi())),
-              (Pt("save-state").textContent = "Salvo localmente"));
-          }, 220)));
+          xl(!0) &&
+            (Dc = window.setTimeout(() => {
+              Pt("save-state").textContent = "Salvo localmente";
+            }, 220)));
+      }
+      function xl(n = !1) {
+        try {
+          (localStorage.setItem(Ul, JSON.stringify(Hi())),
+            n || (Pt("save-state").textContent = "Salvo localmente"));
+          return !0;
+        } catch (t) {
+          (console.error("Não foi possível salvar o projeto no navegador", t),
+            (Pt("save-state").textContent = "Erro ao salvar"));
+          return !1;
+        }
       }
       function Fc(n, t) {
         const e = {
@@ -2864,6 +3213,12 @@ ${o}
         if (!t) throw new Error(`Elemento #${n} não encontrado`);
         return t;
       }
+      N_();
+      eo(Nl);
+      P_();
+      F_();
+      X_();
+      zi();
     </script>
     <style rel="stylesheet" crossorigin>
       :root {
@@ -3174,6 +3529,13 @@ ${o}
       .line-dashed {
         border-top-style: dashed;
         border-width: 2px;
+      }
+      .ellipse-swatch {
+        width: 25px;
+        height: 15px;
+        border: 2px solid currentColor;
+        border-radius: 50%;
+        box-sizing: border-box;
       }
       .erase-icon {
         width: 27px;
@@ -4157,9 +4519,25 @@ ${o}
         stroke-width: 2;
         stroke-dasharray: 7 5;
       }
+      .technical-curve {
+        fill: none;
+        stroke: #17374b;
+        stroke-width: 3;
+        vector-effect: non-scaling-stroke;
+        cursor: crosshair;
+      }
+      .technical-curve.hidden { stroke-width: 2; stroke-dasharray: 7 5; }
+      .curve-hit {
+        fill: none;
+        stroke: transparent;
+        stroke-width: 14;
+        vector-effect: non-scaling-stroke;
+        pointer-events: stroke;
+      }
       .technical-line:hover {
         stroke: #e18b0d;
       }
+      .technical-curve:hover { stroke: #e18b0d; }
       .line-hit {
         stroke: transparent;
         stroke-width: 13;
@@ -4171,6 +4549,7 @@ ${o}
         cursor: pointer;
       }
       .preview-line {
+        fill: none;
         stroke: #0c9dcb;
         stroke-width: 2;
         stroke-dasharray: 4 3;
@@ -4472,6 +4851,14 @@ ${o}
             </button>
             <button
               class="mobile-tool"
+              data-mobile-tool="ellipse"
+              aria-pressed="false"
+              title="Arraste a caixa; Shift cria meia elipse"
+            >
+              Elipse
+            </button>
+            <button
+              class="mobile-tool"
               data-mobile-tool="erase"
               aria-pressed="false"
             >
@@ -4587,6 +4974,11 @@ ${o}
           <span>Oculta</span>
           <kbd>O</kbd>
         </button>
+        <button class="tool" data-tool="ellipse" aria-pressed="false" title="Arraste a caixa; Shift cria meia elipse">
+          <span class="ellipse-swatch" aria-hidden="true"></span>
+          <span>Elipse</span>
+          <kbd>C</kbd>
+        </button>
         <button class="tool" data-tool="erase" aria-pressed="false">
           <span class="erase-icon" aria-hidden="true">⌫</span>
           <span>Apagar</span>
@@ -4625,8 +5017,8 @@ ${o}
         <div class="rail-tip">
           <strong>Como desenhar</strong>
           <p>
-            Arraste entre pontos do grid, inclusive na diagonal. Meio ponto
-            ativado por padrão.
+            Arraste entre pontos do grid, inclusive na diagonal. Na Elipse, o
+            arrasto define a caixa; segure Shift para desenhar meia elipse.
           </p>
         </div>
       </aside>
