@@ -904,52 +904,52 @@
           ((this.showCoordinates = t), this.render());
         }
         bindEvents() {
+          const isPrimaryPointer = (e) =>
+            e.pointerType !== "mouse" || e.button === 0;
+          const releasePointer = (e) => {
+            if (this.svg.hasPointerCapture?.(e.pointerId)) {
+              try { this.svg.releasePointerCapture(e.pointerId); } catch {}
+            }
+          };
           (this.svg.addEventListener("pointerdown", (e) => {
-              if (e.button === 0) {
-                if (
-                  (this.activePointers.set(e.pointerId, {
-                    x: e.clientX,
-                    y: e.clientY,
-                  }),
-                  this.activePointers.size >= 2)
-                ) {
-                  (this.cancelDrawing(),
-                    (this.gestureActive = !0),
-                    (this.pinchStart = this.getPinchState()),
-                    e.preventDefault());
-                  return;
-                }
-                (e.preventDefault(),
-                  (this.pointerId = e.pointerId),
-                  this.svg.setPointerCapture(e.pointerId),
-                  (this.start = this.snap(e)),
-                  (this.current = this.start),
-                  this.render());
-              }
-            }),
-            this.svg.addEventListener("pointermove", (e) => {
-              if (
-                (this.activePointers.has(e.pointerId) &&
-                  this.activePointers.set(e.pointerId, {
-                    x: e.clientX,
-                    y: e.clientY,
-                  }),
-                this.gestureActive &&
-                  this.activePointers.size >= 2 &&
-                  this.pinchStart)
-              ) {
-                (this.updatePinch(), e.preventDefault());
+              if (!isPrimaryPointer(e)) return;
+              this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+              if (this.activePointers.size >= 2) {
+                this.cancelDrawing();
+                this.gestureActive = true;
+                this.pinchStart = this.getPinchState();
+                e.preventDefault();
                 return;
               }
-              this.pointerId !== e.pointerId ||
-                !this.start ||
-                ((this.current = this.snap(e)), this.render());
+              e.preventDefault();
+              this.pointerId = e.pointerId;
+              this.svg.setPointerCapture(e.pointerId);
+              this.start = this.snap(e);
+              this.current = this.start;
+              this.render();
+            }),
+            this.svg.addEventListener("pointermove", (e) => {
+              if (this.activePointers.has(e.pointerId))
+                this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+              if (this.gestureActive && this.activePointers.size >= 2 && this.pinchStart) {
+                this.updatePinch();
+                e.preventDefault();
+                return;
+              }
+              if (this.pointerId === e.pointerId && this.start) {
+                this.current = this.snap(e);
+                this.render();
+              }
             }));
           const t = (e) => {
-            if ((this.activePointers.delete(e.pointerId), this.gestureActive)) {
-              (this.activePointers.size < 2 &&
-                ((this.gestureActive = !1), (this.pinchStart = null)),
-                e.preventDefault());
+            this.activePointers.delete(e.pointerId);
+            if (this.gestureActive) {
+              if (this.activePointers.size < 2) {
+                this.gestureActive = false;
+                this.pinchStart = null;
+              }
+              releasePointer(e);
+              e.preventDefault();
               return;
             }
             if (this.pointerId !== e.pointerId || !this.start) return;
@@ -957,32 +957,34 @@
             if (i.x !== this.start.x || i.y !== this.start.y)
               if (this.getTool() === "erase") this.eraseRectangle(this.start, i);
               else if (this.getTool() === "ellipse" || this.getTool() === "ellipse-hidden") {
-                this.onBeforeChange();
-                this.addEllipse(this.start, i, e.shiftKey);
-                this.recompute();
-                this.onChange();
-              }
-              else {
-                this.onBeforeChange();
-                this.addSegment(this.start, i, this.getTool());
-                this.recompute();
-                this.onChange();
+                this.onBeforeChange(); this.addEllipse(this.start, i, e.shiftKey);
+                this.recompute(); this.onChange();
+              } else {
+                this.onBeforeChange(); this.addSegment(this.start, i, this.getTool());
+                this.recompute(); this.onChange();
               }
             else if (this.getTool() === "erase") this.eraseClickedSegment(this.start);
-            ((this.start = null),
-              (this.current = null),
-              (this.pointerId = null),
-              this.render());
+            this.start = null; this.current = null; this.pointerId = null; this.render();
+            releasePointer(e);
           };
           (this.svg.addEventListener("pointerup", t),
             this.svg.addEventListener("pointercancel", (e) => {
-              if (
-                (this.activePointers.delete(e.pointerId), this.gestureActive)
-              ) {
-                ((this.gestureActive = !1), (this.pinchStart = null));
+              this.activePointers.delete(e.pointerId);
+              releasePointer(e);
+              if (this.gestureActive) {
+                if (this.activePointers.size < 2) {
+                  this.gestureActive = false; this.pinchStart = null;
+                }
                 return;
               }
-              this.pointerId === e.pointerId && this.cancelDrawing();
+              if (this.pointerId === e.pointerId) this.cancelDrawing();
+            }),
+            this.svg.addEventListener("lostpointercapture", (e) => {
+              this.activePointers.delete(e.pointerId);
+              if (this.pointerId === e.pointerId) this.cancelDrawing();
+              if (this.activePointers.size < 2) {
+                this.gestureActive = false; this.pinchStart = null;
+              }
             })),
             this.svg.addEventListener(
               "wheel",
@@ -1026,30 +1028,38 @@
             distance: Math.max(Math.hypot(i.x - e.x, i.y - e.y), 1),
             midpoint: { x: (e.x + i.x) / 2, y: (e.y + i.y) / 2 },
             viewBox: [...this.viewBox],
+            screenToView: this.svg.getScreenCTM()?.inverse() ?? null,
           };
         }
         updatePinch() {
           if (!this.pinchStart) return;
           const t = this.getPinchState(),
             e = this.pinchStart.distance / t.distance,
-            i = this.svg.getBoundingClientRect(),
-            r = Vr(this.pinchStart.viewBox[2] * e, 3, this.cols + 1.6),
-            s = Vr(this.pinchStart.viewBox[3] * e, 3, this.rows + 1.6),
-            o =
-              ((t.midpoint.x - this.pinchStart.midpoint.x) *
-                this.pinchStart.viewBox[2]) /
-              Math.max(i.width, 1),
-            a =
-              ((t.midpoint.y - this.pinchStart.midpoint.y) *
-                this.pinchStart.viewBox[3]) /
-              Math.max(i.height, 1);
-          ((this.viewBox = [
-            this.pinchStart.viewBox[0] - o,
-            this.pinchStart.viewBox[1] - a,
-            r,
-            s,
-          ]),
-            this.applyViewBox());
+            i = this.pinchStart.viewBox,
+            r = Vr(i[2] * e, 3, this.cols + 1.6),
+            s = Vr(i[3] * e, 3, this.rows + 1.6),
+            o = this.screenToViewPoint(
+              this.pinchStart.midpoint.x,
+              this.pinchStart.midpoint.y,
+              this.pinchStart.screenToView,
+            ),
+            a = this.screenToViewPoint(
+              t.midpoint.x,
+              t.midpoint.y,
+              this.pinchStart.screenToView,
+            ),
+            c = (a.x - i[0]) / i[2],
+            l = (a.y - i[1]) / i[3];
+          this.viewBox = [o.x - c * r, o.y - l * s, r, s];
+          this.applyViewBox();
+        }
+        screenToViewPoint(t, e, matrix = this.svg.getScreenCTM()?.inverse()) {
+          const point = this.svg.createSVGPoint();
+          point.x = t;
+          point.y = e;
+          if (!matrix) return { x: this.viewBox[0], y: this.viewBox[1] };
+          const s = point.matrixTransform(matrix);
+          return { x: s.x, y: s.y };
         }
         applyViewBox() {
           (this.svg.setAttribute("viewBox", this.viewBox.join(" ")),
@@ -2182,6 +2192,7 @@ ${o}
         },
         Xn = new Ll(Pt("iso-viewer"), "isometric"),
         vi = new Ll(Pt("model-viewer"), "interactive");
+      let resetAllViewsZoom = () => {};
       function to(n, t, e) {
         return new i_({
           svg: Pt(n),
@@ -2325,16 +2336,14 @@ ${o}
       }
       function O_() {
         const n = navigator;
-        return typeof n.userAgentData?.mobile == "boolean"
-          ? n.userAgentData.mobile
-            ? "mobile"
-            : "desktop"
-          : (/Android|iPhone|iPad|iPod|Windows Phone|webOS|BlackBerry/i.test(
-              navigator.userAgent,
-            ) ||
-              (/Macintosh/i.test(navigator.userAgent) &&
-                navigator.maxTouchPoints > 1),
-            "mobile");
+        if (typeof n.userAgentData?.mobile === "boolean")
+          return n.userAgentData.mobile ? "mobile" : "desktop";
+        const isMobile =
+          /Android|iPhone|iPad|iPod|Windows Phone|webOS|BlackBerry/i.test(
+            navigator.userAgent,
+          ) ||
+          (/Macintosh/i.test(navigator.userAgent) && n.maxTouchPoints > 1);
+        return isMobile ? "mobile" : "desktop";
       }
       function fa(n, t) {
         (document.documentElement.classList.toggle(
@@ -2344,6 +2353,12 @@ ${o}
           document.documentElement.classList.toggle(
             "desktop-mode",
             n === "desktop",
+          ),
+          Object.values(Qt).forEach((e) =>
+            e.svg.setAttribute(
+              "preserveAspectRatio",
+              "xMidYMid meet",
+            ),
           ),
           (Xn.controls.enableZoom = n !== "desktop"),
           (vi.controls.enableZoom = n !== "desktop"),
@@ -2358,7 +2373,17 @@ ${o}
             ));
       }
       function zl(n) {
-        ((es = n),
+        (Object.values(Qt).forEach((t) => t.resetViewBox()),
+          Xn.resetCamera(),
+          vi.resetCamera(),
+          resetAllViewsZoom(),
+          (es = n),
+          Object.values(Qt).forEach((t) =>
+            t.svg.setAttribute(
+              "preserveAspectRatio",
+              "xMidYMid meet",
+            ),
+          ),
           ["front", "side", "top", "iso", "model", "all"].includes(n) &&
             localStorage.setItem(Ml, n),
           document.documentElement.classList.toggle(
@@ -2409,35 +2434,88 @@ ${o}
           ls.append(n));
       }
       function B_() {
-        const n = new Map();
-        let t = 1,
-          e = 1,
-          i = 1;
-        (Yr.addEventListener("pointerdown", (s) => {
-          if (
-            (n.set(s.pointerId, { x: s.clientX, y: s.clientY }), n.size === 2)
-          ) {
-            const o = [...n.values()];
-            ((t = Math.max(Math.hypot(o[1].x - o[0].x, o[1].y - o[0].y), 1)),
-              (e = i));
+        const pointers = new Map();
+        let baseSize = 0,
+          scale = 1,
+          panX = 0,
+          panY = 0,
+          gestureStart = null;
+        const reset = () => {
+          baseSize = 0;
+          scale = 1;
+          panX = 0;
+          panY = 0;
+          gestureStart = null;
+          ls.style.width = "";
+          ls.style.height = "";
+          ls.style.transform = "";
+        };
+        const apply = () => {
+          const size = baseSize * scale;
+          ls.style.width = `${size}px`;
+          ls.style.height = `${size}px`;
+          ls.style.transform = `translate3d(${panX}px, ${panY}px, 0)`;
+        };
+        resetAllViewsZoom = reset;
+        Yr.addEventListener("pointerdown", (s) => {
+          if (s.pointerType === "mouse" && s.button !== 0) return;
+          pointers.set(s.pointerId, { x: s.clientX, y: s.clientY });
+          if (pointers.size !== 2) return;
+          if (!baseSize) {
+            const rect = ls.getBoundingClientRect();
+            baseSize = Math.max(rect.width, rect.height);
           }
-        }),
-          Yr.addEventListener("pointermove", (s) => {
-            if (
-              !n.has(s.pointerId) ||
-              (n.set(s.pointerId, { x: s.clientX, y: s.clientY }), n.size !== 2)
-            )
-              return;
-            const o = [...n.values()],
-              a = Math.max(Math.hypot(o[1].x - o[0].x, o[1].y - o[0].y), 1);
-            ((i = Math.min(2.5, Math.max(0.7, (e * a) / t))),
-              (ls.style.width = `${620 * i}px`),
-              (ls.style.height = `${420 * i}px`),
-              s.preventDefault());
-          }));
-        const r = (s) => n.delete(s.pointerId);
-        (Yr.addEventListener("pointerup", r),
-          Yr.addEventListener("pointercancel", r));
+          const values = [...pointers.values()],
+            midpoint = {
+              x: (values[0].x + values[1].x) / 2,
+              y: (values[0].y + values[1].y) / 2,
+            },
+            distance = Math.max(
+              Math.hypot(values[1].x - values[0].x, values[1].y - values[0].y),
+              1,
+            ),
+            rect = ls.getBoundingClientRect();
+          gestureStart = {
+            distance,
+            midpoint,
+            scale,
+            panX,
+            panY,
+            layoutLeft: rect.left - panX,
+            layoutTop: rect.top - panY,
+            contentX: (midpoint.x - rect.left) / Math.max(scale, 0.001),
+            contentY: (midpoint.y - rect.top) / Math.max(scale, 0.001),
+          };
+          s.preventDefault();
+        }, { passive: false });
+        Yr.addEventListener("pointermove", (s) => {
+          if (!pointers.has(s.pointerId)) return;
+          pointers.set(s.pointerId, { x: s.clientX, y: s.clientY });
+          if (pointers.size !== 2 || !gestureStart) return;
+          const values = [...pointers.values()],
+            midpoint = {
+              x: (values[0].x + values[1].x) / 2,
+              y: (values[0].y + values[1].y) / 2,
+            },
+            distance = Math.max(
+              Math.hypot(values[1].x - values[0].x, values[1].y - values[0].y),
+              1,
+            );
+          scale = Math.min(
+            2.5,
+            Math.max(0.7, gestureStart.scale * (distance / gestureStart.distance)),
+          );
+          panX = midpoint.x - gestureStart.layoutLeft - gestureStart.contentX * scale;
+          panY = midpoint.y - gestureStart.layoutTop - gestureStart.contentY * scale;
+          apply();
+          s.preventDefault();
+        }, { passive: false });
+        const end = (s) => {
+          pointers.delete(s.pointerId);
+          if (pointers.size < 2) gestureStart = null;
+        };
+        Yr.addEventListener("pointerup", end);
+        Yr.addEventListener("pointercancel", end);
       }
       function z_(n) {
         ({
@@ -3278,6 +3356,8 @@ ${o}
       }
       html.mobile-mode {
         min-width: 0;
+        --mobile-gap: 8px;
+        --mobile-control-height: 36px;
       }
       body {
         margin: 0;
@@ -4145,11 +4225,11 @@ ${o}
           top: 50px;
           left: 0;
           right: 0;
-          height: 52px;
+          height: calc(var(--mobile-control-height) + (var(--mobile-gap) * 2));
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 4px;
-          padding: 4px;
+          gap: var(--mobile-gap);
+          padding: var(--mobile-gap);
           background: #0f2d42;
           z-index: 40;
         }
@@ -4158,8 +4238,12 @@ ${o}
           min-width: 0;
         }
         html.mobile-mode .mobile-menu-trigger {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
           width: 100%;
-          height: 44px;
+          height: var(--mobile-control-height);
           padding: 0 5px;
           border: 0;
           border-radius: 4px;
@@ -4169,18 +4253,28 @@ ${o}
           font-weight: 700;
           cursor: pointer;
         }
-        html.mobile-mode .mobile-menu-trigger:first-letter {
-          font-size: 17px;
+        html.mobile-mode .mobile-menu-icon {
+          width: 12px;
+          height: 12px;
+          flex: none;
+          background: linear-gradient(
+            to bottom,
+            currentColor 0 2px,
+            transparent 2px 5px,
+            currentColor 5px 7px,
+            transparent 7px 10px,
+            currentColor 10px 12px
+          );
         }
         html.mobile-mode .mobile-menu.open .mobile-menu-trigger {
           background: #dff0f6;
         }
         html.mobile-mode .mobile-menu-panel {
           position: absolute;
-          top: 48px;
+          top: calc(var(--mobile-control-height) + var(--mobile-gap));
           display: none;
           flex-direction: column;
-          gap: 3px;
+          gap: var(--mobile-gap);
           min-width: 170px;
           max-width: min(280px, 90vw);
           max-height: calc(100dvh - 112px);
@@ -4245,13 +4339,15 @@ ${o}
         }
         html.mobile-mode .workspace {
           display: block;
-          padding: 116px 8px 18px;
+          padding: calc(50px + var(--mobile-control-height) + (var(--mobile-gap) * 2)) 8px 18px;
           min-height: 100dvh;
           overflow: visible;
         }
         html.mobile-mode .workspace-heading {
           align-items: center;
-          margin-bottom: 10px;
+          height: var(--mobile-control-height);
+          min-height: var(--mobile-control-height);
+          margin: 0 0 var(--mobile-gap);
         }
         html.mobile-mode .workspace-heading {
           justify-content: flex-start;
@@ -4267,10 +4363,11 @@ ${o}
         }
         html.mobile-mode .heading-tools {
           width: 100%;
+          height: var(--mobile-control-height);
           min-width: 100%;
           flex: none;
           margin-left: 0;
-          gap: 4px;
+          gap: var(--mobile-gap);
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
           overflow: visible;
@@ -4282,7 +4379,7 @@ ${o}
           grid-template-columns: repeat(2, minmax(0, 1fr));
           min-width: 0;
           width: 100%;
-          gap: 4px;
+          gap: var(--mobile-gap);
         }
         html.mobile-mode .heading-tools .button {
           width: auto;
@@ -4319,9 +4416,9 @@ ${o}
           display: none;
         }
         html.mobile-mode .heading-tools .button {
-          height: 30px;
+          height: var(--mobile-control-height);
           padding: 0 7px;
-          font-size: clamp(8px, 2.2vw, 10px);
+          font-size: 11px;
         }
         html.mobile-mode .drawing-layout {
           display: block;
@@ -4341,9 +4438,13 @@ ${o}
           display: none;
         }
         html.mobile-mode .drawing-card .svg-wrap {
-          height: calc(100dvh - 238px);
+          width: auto;
+          height: min(calc(100vw - 16px), calc(100dvh - 238px));
           min-height: 260px;
-          padding: 8px;
+          margin: 0;
+          padding: 0;
+          aspect-ratio: auto;
+          box-sizing: border-box;
         }
         html.mobile-mode .view-reset {
           min-height: 22px;
@@ -4381,9 +4482,9 @@ ${o}
           display: none;
         }
         html.mobile-mode .all-views-card {
-          background: var(--paper);
-          border: 1px solid var(--border);
-          border-radius: 6px;
+          background: transparent;
+          border: 0;
+          border-radius: 0;
           overflow: hidden;
         }
         html.mobile-mode .all-views-scroll {
@@ -4392,18 +4493,18 @@ ${o}
           min-height: 300px;
           overflow: auto;
           overscroll-behavior: contain;
-          touch-action: pan-x pan-y;
-          background: #fcfdfd;
+          touch-action: none;
+          background: transparent;
         }
         html.mobile-mode .all-views-content {
           position: relative;
           display: grid;
           grid-template-columns: 1fr 1fr;
           grid-template-rows: 1fr 1fr;
-          gap: 8px;
+          gap: 0;
           width: min(620px, calc(100vw - 16px));
           height: min(620px, calc(100vw - 16px));
-          padding: 12px;
+          padding: 0;
           box-sizing: border-box;
         }
         html.mobile-mode .all-view-guides {
@@ -4421,8 +4522,8 @@ ${o}
           height: 100%;
           aspect-ratio: 1;
           min-width: 0;
-          background: #fff;
-          border: 1px solid #e3e9ec;
+          background: transparent;
+          border: 0;
         }
         html.mobile-mode .all-view-front {
           grid-column: 1;
@@ -4795,6 +4896,14 @@ ${o}
         margin-top: 14px;
         padding: 0 10px;
       }
+      html.mobile-mode .all-views-card {
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+      }
+      html.mobile-mode .all-views-scroll {
+        background: transparent;
+      }
     </style>
   </head>
   <body>
@@ -4858,7 +4967,7 @@ ${o}
             type="button"
             aria-expanded="false"
           >
-            ☰ <span>Linhas</span>
+            <span class="mobile-menu-icon" aria-hidden="true"></span><span>Linhas</span>
           </button>
           <div class="mobile-menu-panel">
             <button
@@ -4928,7 +5037,7 @@ ${o}
             type="button"
             aria-expanded="false"
           >
-            ☰ <span>Vistas</span>
+            <span class="mobile-menu-icon" aria-hidden="true"></span><span>Vistas</span>
           </button>
           <div class="mobile-menu-panel">
             <button
@@ -4981,7 +5090,7 @@ ${o}
             type="button"
             aria-expanded="false"
           >
-            ☰ <span>Projeto</span>
+            <span class="mobile-menu-icon" aria-hidden="true"></span><span>Projeto</span>
           </button>
           <div class="mobile-menu-panel">
             <button data-mobile-action="new">Novo</button>
