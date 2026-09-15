@@ -49,6 +49,11 @@
         TOUCH,
         Mesh,
         MeshStandardMaterial,
+        MeshDepthMaterial,
+        ShaderMaterial,
+        WebGLRenderTarget,
+        RGBADepthPacking,
+        NearestFilter,
         OrthographicCamera,
         Scene,
         Shape,
@@ -850,6 +855,8 @@
             this.svg.setAttribute("preserveAspectRatio", "xMidYMid meet"),
             this.bindEvents(),
             this.render());
+          this.strokeResizeObserver = new ResizeObserver(() => this.updateStrokeAppearance());
+          this.strokeResizeObserver.observe(this.svg);
         }
         resetViewBox() {
           ((this.viewBox = [-0.8, -0.8, this.cols + 1.6, this.rows + 1.6]),
@@ -989,7 +996,7 @@
             this.svg.addEventListener(
               "wheel",
               (e) => {
-                if (!e.ctrlKey) return;
+                if (!e.ctrlKey && !e.altKey) return;
                 e.preventDefault();
                 const i = this.svg.getBoundingClientRect(),
                   r = this.viewBox[2],
@@ -1066,6 +1073,33 @@
             document
               .querySelector(`[data-reset-view="${this.svg.id.replace("-view", "")}"]`)
               ?.toggleAttribute("hidden", this.isDefaultViewBox()));
+          this.updateStrokeAppearance();
+        }
+        updateStrokeAppearance(svg = this.svg) {
+          const zoomRatio = svg === this.svg ? Math.min(1, this.viewBox[2] / (this.cols + 1.6)) : 1;
+          const thickness = 1 / Math.max(0.35, zoomRatio);
+          if (!svg.getClientRects().length) return;
+          const matrix = svg.getScreenCTM();
+          if (!matrix) return;
+          const scale = Math.hypot(matrix.a, matrix.b);
+          for (const line of svg.querySelectorAll(".technical-line, .technical-curve, .preview-line")) {
+            const preview = line.classList.contains("preview-line");
+            const dashed = preview || line.classList.contains("hidden");
+            line.style.strokeWidth = String((dashed ? 2 : 3) * thickness);
+            if (!dashed) continue;
+            const length = line.getTotalLength() * scale;
+            if (!(length > 0)) {
+              line.style.strokeDasharray = "none";
+              continue;
+            }
+            const dash = (preview ? 4 : 7) * thickness;
+            const gap = (preview ? 3 : 5) * thickness;
+            // Fit N whole dashes and N - 1 gaps, leaving a dash at each end.
+            const count = Math.max(1, Math.round((length + gap) / (dash + gap)));
+            const factor = length / (count * dash + (count - 1) * gap);
+            line.style.strokeDasharray = count === 1 ? "none" : `${dash * factor} ${gap * factor}`;
+            line.style.strokeDashoffset = "0";
+          }
         }
         snap(t) {
           const e = this.svg.createSVGPoint();
@@ -1283,6 +1317,7 @@
               (i.textContent = "ARRASTE PARA DESENHAR"),
               this.svg.append(i));
           }
+          this.updateStrokeAppearance();
         }
         renderCoordinates() {
           const t = qe("g");
@@ -1936,6 +1971,8 @@ ${o}
         camera;
         controls;
         cameraHome = null;
+        faceColorsEnabled = false;
+        faceColorResources = null;
         object = new Si();
         size = 10;
         constructor(t, e) {
@@ -1967,6 +2004,8 @@ ${o}
             this.canvas.addEventListener(
               "wheel",
               (t) => {
+                // Handle wheel zoom here in both layouts; keep native touch gestures.
+                t.stopImmediatePropagation();
                 if (!t.ctrlKey) return;
                 t.preventDefault();
                 this.camera.zoom = el.clamp(
@@ -1977,7 +2016,7 @@ ${o}
                 this.camera.updateProjectionMatrix();
                 this.controls.update();
               },
-              { passive: !1 },
+              { passive: !1, capture: !0 },
             ),
             this.setupScene(),
             this.resetCamera(),
@@ -1985,6 +2024,7 @@ ${o}
             this.animate());
         }
         setGeometry(t) {
+          this.clearFaceColors();
           if (
             (this.scene.remove(this.object),
             U_(this.object),
@@ -2023,6 +2063,143 @@ ${o}
                 : 10));
           } else this.size = 10;
           (this.scene.add(this.object), this.resetCamera());
+          if (this.faceColorsEnabled) this.applyFaceColors();
+        }
+        clearFaceColors() {
+          const resources = this.faceColorResources;
+          if (!resources) return;
+          resources.mesh.remove(resources.overlay);
+          this.object.children.filter((child) => child.isLineSegments).forEach((child) => { child.renderOrder = 0; });
+          resources.mesh.material = resources.original;
+          resources.baseMaterials.forEach((base) => base.dispose());
+          resources.material.dispose();
+          resources.targets.forEach((target) => target.dispose());
+          this.faceColorResources = null;
+        }
+        toggleFaceColors() {
+          this.faceColorsEnabled = !this.faceColorsEnabled;
+          if (this.faceColorsEnabled) this.applyFaceColors();
+          else this.clearFaceColors();
+          document.getElementById("toggle-face-colors").setAttribute("aria-pressed", String(this.faceColorsEnabled));
+          document.getElementById("face-colors-legend").hidden = !this.faceColorsEnabled;
+        }
+        applyFaceColors() {
+          if (this.mode !== "interactive" || this.faceColorResources) return;
+          const mesh = this.object.children.find((child) => child.isMesh);
+          if (!mesh) return;
+          this.object.updateMatrixWorld(true);
+          const bounds = new Jn().setFromObject(mesh), center = bounds.getCenter(new O());
+          const radius = Math.max(bounds.getSize(new O()).length() * 0.55, 1);
+          const depthMaterial = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, side: Eo });
+          const depthScene = new wu(), depthMesh = new Ke(mesh.geometry, depthMaterial);
+          depthMesh.matrixAutoUpdate = false;
+          depthMesh.matrix.copy(mesh.matrixWorld);
+          depthScene.add(depthMesh);
+          const targets = [], matrices = [];
+          const oldTarget = this.renderer.getRenderTarget();
+          const oldColor = this.renderer.getClearColor(new kt()), oldAlpha = this.renderer.getClearAlpha();
+          // World axes account for the model's mirrored X: front -Z, left +X, top +Y.
+          try {
+            for (const direction of [new O(0, 0, -1), new O(1, 0, 0), new O(0, 1, 0)]) {
+              const camera = new ha(-radius, radius, radius, -radius, 0.1, radius * 4);
+              camera.position.copy(center).addScaledVector(direction, radius * 2);
+              if (direction.y) camera.up.set(0, 0, 1);
+              camera.lookAt(center);
+              camera.updateMatrixWorld(true);
+              matrices.push(new de().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+              const target = new WebGLRenderTarget(1024, 1024, { minFilter: NearestFilter, magFilter: NearestFilter });
+              targets.push(target);
+              this.renderer.setRenderTarget(target);
+              this.renderer.setClearColor(0xffffff, 1);
+              this.renderer.clear();
+              this.renderer.render(depthScene, camera);
+            }
+          } catch (error) {
+            targets.forEach((target) => target.dispose());
+            throw error;
+          } finally {
+            this.renderer.setRenderTarget(oldTarget);
+            this.renderer.setClearColor(oldColor, oldAlpha);
+            depthMaterial.dispose();
+          }
+          const material = new ShaderMaterial({
+            side: Eo,
+            polygonOffset: true, polygonOffsetFactor: 0, polygonOffsetUnits: 0,
+            uniforms: {
+              frontDepth: { value: targets[0].texture }, sideDepth: { value: targets[1].texture }, topDepth: { value: targets[2].texture },
+              frontMatrix: { value: matrices[0] }, sideMatrix: { value: matrices[1] }, topMatrix: { value: matrices[2] },
+              frontColor: { value: new kt("#36bd68") }, sideColor: { value: new kt("#398bea") }, topColor: { value: new kt("#ef5350") },
+              stripeScale: { value: 14 / radius },
+            },
+            vertexShader: `
+              varying vec3 facePosition;
+              varying vec3 faceNormal;
+              void main() {
+                vec4 world = modelMatrix * vec4(position, 1.0);
+                facePosition = world.xyz;
+                faceNormal = normalize(mat3(modelMatrix) * normal);
+                gl_Position = projectionMatrix * viewMatrix * world;
+              }
+            `,
+            fragmentShader: `
+              #include <packing>
+              uniform sampler2D frontDepth, sideDepth, topDepth;
+              uniform mat4 frontMatrix, sideMatrix, topMatrix;
+              uniform vec3 frontColor, sideColor, topColor;
+              uniform float stripeScale;
+              varying vec3 facePosition;
+              varying vec3 faceNormal;
+              float occluded(sampler2D depthMap, mat4 projection) {
+                vec4 clip = projection * vec4(facePosition, 1.0);
+                vec3 point = clip.xyz / clip.w * 0.5 + 0.5;
+                float nearest = unpackRGBAToDepth(texture2D(depthMap, point.xy));
+                return step(nearest + 0.0015, point.z);
+              }
+              void main() {
+                vec3 normal = normalize(faceNormal), axis = abs(normal);
+                vec3 color;
+                float hidden;
+                vec2 plane;
+                if (axis.z >= axis.x && axis.z >= axis.y) {
+                  if (normal.z >= 0.0) discard;
+                  color = frontColor;
+                  hidden = occluded(frontDepth, frontMatrix);
+                  plane = facePosition.xy;
+                } else if (axis.x >= axis.y) {
+                  if (normal.x <= 0.0) discard;
+                  color = sideColor;
+                  hidden = occluded(sideDepth, sideMatrix);
+                  plane = facePosition.zy;
+                } else {
+                  if (normal.y <= 0.0) discard;
+                  color = topColor;
+                  hidden = occluded(topDepth, topMatrix);
+                  plane = facePosition.xz;
+                }
+                float phase = (plane.x + plane.y) * stripeScale;
+                float wave = sin(phase * 6.2831853);
+                float stripe = smoothstep(-max(fwidth(wave), 0.01), max(fwidth(wave), 0.01), wave);
+                color = mix(color, mix(color * 0.35, mix(color, vec3(1.0), 0.65), stripe), hidden);
+                color *= 0.8 + 0.2 * abs(dot(normal, normalize(vec3(0.4, 0.8, -0.5))));
+                gl_FragColor = vec4(color, 1.0);
+                #include <tonemapping_fragment>
+                #include <colorspace_fragment>
+              }
+            `,
+          });
+          // Keep the original material underneath the colored faces.
+          const overlay = new Ke(mesh.geometry, material);
+          overlay.renderOrder = 1;
+          this.object.children.filter((child) => child.isLineSegments).forEach((child) => { child.renderOrder = 2; });
+          mesh.add(overlay);
+          const original = mesh.material;
+          const baseMaterials = (Array.isArray(original) ? original : [original]).map((base, index) => {
+            const neutral = base.clone();
+            neutral.color.setHex(index === 0 ? 14543341 : 9412776);
+            return neutral;
+          });
+          mesh.material = Array.isArray(original) ? baseMaterials : baseMaterials[0];
+          this.faceColorResources = { mesh, overlay, original, baseMaterials, material, targets };
         }
         resetCamera() {
           const t = Math.max(this.size * 2.2, 20),
@@ -2225,6 +2402,7 @@ ${o}
           Pt("open-project").addEventListener("click", () => Ri.click()),
           Pt("reset-iso").addEventListener("click", () => Xn.resetCamera()),
           Pt("reset-camera").addEventListener("click", () => vi.resetCamera()),
+          Pt("toggle-face-colors").addEventListener("click", () => vi.toggleFaceColors()),
           document.querySelectorAll("[data-reset-view]").forEach((n) => {
             n.addEventListener("click", () =>
               Qt[n.dataset.resetView]?.resetViewBox(),
@@ -2424,6 +2602,7 @@ ${o}
           const e = Pt(n).cloneNode(!0);
           (e.removeAttribute("id"),
             e.setAttribute("class", `all-view-svg ${t}`),
+            e.setAttribute("data-source-view", n.replace("-view", "")),
             e.setAttribute("aria-hidden", "true"),
             (e.style.pointerEvents = "none"),
             ls.append(e));
@@ -2432,8 +2611,15 @@ ${o}
         (n.setAttribute("class", "all-view-guides"),
           n.setAttribute("aria-hidden", "true"),
           ls.append(n));
+        updateAllViewsStrokes();
+      }
+      function updateAllViewsStrokes() {
+        for (const svg of ls.querySelectorAll(".all-view-svg")) {
+          Qt[svg.dataset.sourceView].updateStrokeAppearance(svg);
+        }
       }
       function B_() {
+        new ResizeObserver(updateAllViewsStrokes).observe(ls);
         const pointers = new Map();
         let baseSize = 0,
           scale = 1,
@@ -3349,6 +3535,12 @@ ${o}
       }
       * {
         box-sizing: border-box;
+        scrollbar-width: none;
+      }
+      *::-webkit-scrollbar {
+        display: none;
+        width: 0;
+        height: 0;
       }
       html {
         min-width: 1080px;
@@ -3574,7 +3766,6 @@ ${o}
         z-index: 10;
         overflow-y: auto;
         overscroll-behavior: contain;
-        scrollbar-gutter: stable;
       }
       .rail-label {
         padding: 0 10px;
@@ -4105,6 +4296,52 @@ ${o}
       .viewer-button[hidden] {
         display: none;
       }
+      .interactive > header {
+        height: auto;
+        min-height: 52px;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+      }
+      .viewer-card header .viewer-header-actions {
+        margin-left: auto;
+        gap: 6px;
+      }
+      #toggle-face-colors[aria-pressed="true"] {
+        background: #245c49;
+        color: #fff;
+        border-color: #36bd68;
+      }
+      .face-colors-legend {
+        position: absolute;
+        bottom: 8px;
+        left: 8px;
+        right: 8px;
+        z-index: 1;
+        width: fit-content;
+        max-width: calc(100% - 16px);
+        padding: 7px 9px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--paper);
+        color: var(--ink);
+        font-size: 10px;
+        pointer-events: none;
+      }
+      .face-colors-legend > div {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+      .face-colors-legend i {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        margin-right: 4px;
+        background: var(--face-color);
+      }
       .viewer-button:hover {
         border-color: #9eb7c3;
         color: var(--navy);
@@ -4467,9 +4704,31 @@ ${o}
         html.mobile-mode .viewer-grid {
           display: block;
         }
+        html.mobile-mode .workspace:has(.viewer-card.mobile-active) {
+          display: flex;
+          flex-direction: column;
+          height: 100dvh;
+          padding-bottom: var(--mobile-gap);
+        }
+        html.mobile-mode .workspace:has(.viewer-card.mobile-active) .workspace-heading {
+          flex: none;
+        }
+        html.mobile-mode .workspace:has(.viewer-card.mobile-active) .drawing-layout {
+          display: none;
+        }
+        html.mobile-mode .workspace:has(.viewer-card.mobile-active) .viewer-grid {
+          flex: 1;
+          min-height: 0;
+        }
+        html.mobile-mode .viewer-card.mobile-active {
+          display: grid;
+          grid-template-rows: auto minmax(0, 1fr) auto;
+          height: 100%;
+          min-height: 0;
+        }
         html.mobile-mode .viewer {
-          height: calc(100dvh - 220px);
-          min-height: 300px;
+          height: 100%;
+          min-height: 0;
         }
         html.mobile-mode .viewer-card > header,
         html.mobile-mode .drawing-card > header {
@@ -5378,12 +5637,25 @@ ${o}
                 <span class="view-code blue">3D</span>
                 <h3 id="model-title">Modelo interativo</h3>
               </div>
-              <button id="reset-camera" class="viewer-button" hidden>
-                Redefinir câmera
-              </button>
+              <div class="viewer-header-actions">
+                <button id="reset-camera" class="viewer-button" hidden>
+                  Redefinir câmera
+                </button>
+                <button id="toggle-face-colors" class="viewer-button" type="button" aria-pressed="false" aria-controls="face-colors-legend" title="Colorir faces por vista e zebrar as partes ocultas">
+                  Cores por vista
+                </button>
+              </div>
             </header>
             <div id="model-viewer" class="viewer">
               <canvas aria-label="Modelo 3D girável com o mouse"></canvas>
+              <div id="face-colors-legend" class="face-colors-legend" hidden>
+                <div>
+                  <span><i style="--face-color: #36bd68"></i>Frontal</span>
+                  <span><i style="--face-color: #398bea"></i>Lateral esquerda</span>
+                  <span><i style="--face-color: #ef5350"></i>Superior</span>
+                </div>
+                Cor lisa: visível · Zebrado: oculto na vista indicada. Gire para explorar.
+              </div>
             </div>
             <footer>
               <span id="voxel-count">0 células sólidas</span

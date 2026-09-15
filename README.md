@@ -31,6 +31,7 @@ Os modos **mobile** e **desktop** são opções de interface e podem ser usados 
 - O sólido-base usa o contorno externo mais detalhado das vistas; diagonais de
   canto são extrudadas como chanfros antes da aplicação dos furos.
 - A reconstrução do modelo acontece automaticamente quando as vistas são válidas.
+- No modelo interativo, **Cores por vista** colore as faces voltadas para a frente em verde, para a lateral esquerda em azul e para cima em vermelho. Partes dessas faces encobertas por outras superfícies ficam zebradas; gire o modelo para examiná-las. Faces voltadas para trás, para a direita ou para baixo mantêm a aparência original. Faces inclinadas e curvas usam a direção predominante da superfície. O botão começa desativado e pode ser desligado para restaurar a aparência original.
 - Os projetos podem ser salvos e abertos em JSON.
 - O PDF técnico pode ser exportado quando houver geometria válida.
 
