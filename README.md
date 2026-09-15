@@ -12,6 +12,8 @@ A pasta `assets/` contém arquivos auxiliares do repositório, mas não é neces
 
 ## Uso
 
+Os modos **mobile** e **desktop** são opções de interface e podem ser usados em qualquer dispositivo: é possível usar o modo mobile no PC e o modo desktop no celular.
+
 - Desenhe as vistas frontal, lateral esquerda e superior no grid.
 - Use as ferramentas de linhas visíveis, ocultas, elipse e apagar.
 - Na ferramenta **Elipse**, arraste a caixa delimitadora. Segure **Shift** durante

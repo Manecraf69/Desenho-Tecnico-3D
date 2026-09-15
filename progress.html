@@ -850,6 +850,8 @@
             this.svg.setAttribute("preserveAspectRatio", "xMidYMid meet"),
             this.bindEvents(),
             this.render());
+          this.strokeResizeObserver = new ResizeObserver(() => this.updateStrokeAppearance());
+          this.strokeResizeObserver.observe(this.svg);
         }
         resetViewBox() {
           ((this.viewBox = [-0.8, -0.8, this.cols + 1.6, this.rows + 1.6]),
@@ -989,7 +991,7 @@
             this.svg.addEventListener(
               "wheel",
               (e) => {
-                if (!e.ctrlKey) return;
+                if (!e.ctrlKey && !e.altKey) return;
                 e.preventDefault();
                 const i = this.svg.getBoundingClientRect(),
                   r = this.viewBox[2],
@@ -1066,6 +1068,33 @@
             document
               .querySelector(`[data-reset-view="${this.svg.id.replace("-view", "")}"]`)
               ?.toggleAttribute("hidden", this.isDefaultViewBox()));
+          this.updateStrokeAppearance();
+        }
+        updateStrokeAppearance(svg = this.svg) {
+          const zoomRatio = svg === this.svg ? Math.min(1, this.viewBox[2] / (this.cols + 1.6)) : 1;
+          const thickness = 1 / Math.max(0.35, zoomRatio);
+          if (!svg.getClientRects().length) return;
+          const matrix = svg.getScreenCTM();
+          if (!matrix) return;
+          const scale = Math.hypot(matrix.a, matrix.b);
+          for (const line of svg.querySelectorAll(".technical-line, .technical-curve, .preview-line")) {
+            const preview = line.classList.contains("preview-line");
+            const dashed = preview || line.classList.contains("hidden");
+            line.style.strokeWidth = String((dashed ? 2 : 3) * thickness);
+            if (!dashed) continue;
+            const length = line.getTotalLength() * scale;
+            if (!(length > 0)) {
+              line.style.strokeDasharray = "none";
+              continue;
+            }
+            const dash = (preview ? 4 : 7) * thickness;
+            const gap = (preview ? 3 : 5) * thickness;
+            // Fit N whole dashes and N - 1 gaps, leaving a dash at each end.
+            const count = Math.max(1, Math.round((length + gap) / (dash + gap)));
+            const factor = length / (count * dash + (count - 1) * gap);
+            line.style.strokeDasharray = count === 1 ? "none" : `${dash * factor} ${gap * factor}`;
+            line.style.strokeDashoffset = "0";
+          }
         }
         snap(t) {
           const e = this.svg.createSVGPoint();
@@ -1283,6 +1312,7 @@
               (i.textContent = "ARRASTE PARA DESENHAR"),
               this.svg.append(i));
           }
+          this.updateStrokeAppearance();
         }
         renderCoordinates() {
           const t = qe("g");
@@ -1967,6 +1997,8 @@ ${o}
             this.canvas.addEventListener(
               "wheel",
               (t) => {
+                // Handle wheel zoom here in both layouts; keep native touch gestures.
+                t.stopImmediatePropagation();
                 if (!t.ctrlKey) return;
                 t.preventDefault();
                 this.camera.zoom = el.clamp(
@@ -1977,7 +2009,7 @@ ${o}
                 this.camera.updateProjectionMatrix();
                 this.controls.update();
               },
-              { passive: !1 },
+              { passive: !1, capture: !0 },
             ),
             this.setupScene(),
             this.resetCamera(),
@@ -2424,6 +2456,7 @@ ${o}
           const e = Pt(n).cloneNode(!0);
           (e.removeAttribute("id"),
             e.setAttribute("class", `all-view-svg ${t}`),
+            e.setAttribute("data-source-view", n.replace("-view", "")),
             e.setAttribute("aria-hidden", "true"),
             (e.style.pointerEvents = "none"),
             ls.append(e));
@@ -2432,8 +2465,15 @@ ${o}
         (n.setAttribute("class", "all-view-guides"),
           n.setAttribute("aria-hidden", "true"),
           ls.append(n));
+        updateAllViewsStrokes();
+      }
+      function updateAllViewsStrokes() {
+        for (const svg of ls.querySelectorAll(".all-view-svg")) {
+          Qt[svg.dataset.sourceView].updateStrokeAppearance(svg);
+        }
       }
       function B_() {
+        new ResizeObserver(updateAllViewsStrokes).observe(ls);
         const pointers = new Map();
         let baseSize = 0,
           scale = 1,
@@ -3349,6 +3389,12 @@ ${o}
       }
       * {
         box-sizing: border-box;
+        scrollbar-width: none;
+      }
+      *::-webkit-scrollbar {
+        display: none;
+        width: 0;
+        height: 0;
       }
       html {
         min-width: 1080px;
@@ -3574,7 +3620,6 @@ ${o}
         z-index: 10;
         overflow-y: auto;
         overscroll-behavior: contain;
-        scrollbar-gutter: stable;
       }
       .rail-label {
         padding: 0 10px;
@@ -4467,9 +4512,31 @@ ${o}
         html.mobile-mode .viewer-grid {
           display: block;
         }
+        html.mobile-mode .workspace:has(.viewer-card.mobile-active) {
+          display: flex;
+          flex-direction: column;
+          height: 100dvh;
+          padding-bottom: var(--mobile-gap);
+        }
+        html.mobile-mode .workspace:has(.viewer-card.mobile-active) .workspace-heading {
+          flex: none;
+        }
+        html.mobile-mode .workspace:has(.viewer-card.mobile-active) .drawing-layout {
+          display: none;
+        }
+        html.mobile-mode .workspace:has(.viewer-card.mobile-active) .viewer-grid {
+          flex: 1;
+          min-height: 0;
+        }
+        html.mobile-mode .viewer-card.mobile-active {
+          display: grid;
+          grid-template-rows: auto minmax(0, 1fr) auto;
+          height: 100%;
+          min-height: 0;
+        }
         html.mobile-mode .viewer {
-          height: calc(100dvh - 220px);
-          min-height: 300px;
+          height: 100%;
+          min-height: 0;
         }
         html.mobile-mode .viewer-card > header,
         html.mobile-mode .drawing-card > header {
