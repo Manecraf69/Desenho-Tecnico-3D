@@ -28,11 +28,24 @@ Os modos **mobile** e **desktop** são opções de interface e podem ser usados 
 - Furos de vistas diferentes podem coexistir no mesmo sólido. A reconstrução
   combina as subtrações nos eixos X, Y e Z, inclusive quando um furo vertical
   passante encontra um furo frontal ou lateral cego.
-- O sólido-base usa o contorno externo mais detalhado das vistas; diagonais de
-  canto são extrudadas como chanfros antes da aplicação dos furos.
+- Em peças com furos, o sólido-base combina os contornos externos das três
+  vistas por interseção antes de subtrair os furos. Isso preserva degraus,
+  paredes elevadas, canais e chanfros sem estender um único perfil por toda a peça.
 - A reconstrução do modelo acontece automaticamente quando as vistas são válidas.
 - No modelo interativo, **Cores por vista** colore as faces voltadas para a frente em verde, para a lateral esquerda em azul e para cima em vermelho. Partes dessas faces encobertas por outras superfícies ficam zebradas; gire o modelo para examiná-las. Faces voltadas para trás, para a direita ou para baixo mantêm a aparência original. Faces inclinadas e curvas usam a direção predominante da superfície. O botão começa desativado e pode ser desligado para restaurar a aparência original.
 - Os projetos podem ser salvos e abertos em JSON.
 - O PDF técnico pode ser exportado quando houver geometria válida.
 
 Os dados locais ficam salvos no navegador do usuário.
+
+## Validação da reconstrução
+
+As dependências de desenvolvimento são usadas somente nos testes; a publicação
+continua usando apenas `index.html`.
+
+- `npm install` instala as dependências de teste.
+- `npm test` verifica a geometria com o projeto extraído do PDF de regressão,
+  incluindo degrau, furos, chanfros, canal inferior e ausência de arestas falsas.
+- `npm run test:browser` verifica importação, renderização, exportação e reabertura
+  do PDF no Chrome instalado. `CHROME_PATH` permite indicar outro executável.
+  Os resultados visuais e o PDF corrigido são gravados em `tests/`.

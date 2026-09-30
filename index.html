@@ -1954,9 +1954,10 @@ ${o}
       function x_(n) {
         return (
           Cl(n)
-            .replace(/[^a-zA-Z0-9_-]+/g, "-")
-            .replace(/^-|-$/g, "")
-            .toLowerCase() || "projeto"
+            .replace(/[<>:"/\\|?*\x00-\x1f]/g, "-")
+            .replace(/\s+/g, " ")
+            .trim()
+            .replace(/[. ]+$/g, "") || "Projeto"
         );
       }
       function Wt(n) {
@@ -2853,6 +2854,51 @@ ${o}
         t!==n&&t.dispose();if(s<0)r.forEach((o)=>o.flip());return r;
       }
       function subtractPolygons(n,t){const e=new CsgNode(n.map((r)=>r.clone())),i=new CsgNode(t.map((r)=>r.clone()));e.invert();e.clipTo(i);i.clipTo(e);i.invert();i.clipTo(e);i.invert();e.build(i.allPolygons());e.invert();return e.allPolygons();}
+      function intersectPolygons(left, right) {
+        if (!left.length || !right.length) return [];
+        const a = new CsgNode(left.map((p) => p.clone()));
+        const b = new CsgNode(right.map((p) => p.clone()));
+        a.invert(); b.clipTo(a); b.invert(); a.clipTo(b);
+        b.clipTo(a); a.build(b.allPolygons()); a.invert();
+        return a.allPolygons();
+      }
+      function polygonFeatureEdges(polygons) {
+        // BSP cuts leave T junctions on planar faces. Match intervals on the
+        // same line instead of treating every unmatched triangle as an edge.
+        const lines = new Map(), result = [], tolerance = 1e-5;
+        const key = (v) => [v.x, v.y, v.z].map((x) => Math.round(x * 1e4)).join(",");
+        for (const polygon of polygons) {
+          for (let i = 0; i < polygon.vertices.length; i++) {
+            const a = polygon.vertices[i].pos;
+            const b = polygon.vertices[(i + 1) % polygon.vertices.length].pos;
+            const direction = b.clone().sub(a);
+            if (direction.length() < tolerance) continue;
+            direction.normalize();
+            const sign = [direction.x, direction.y, direction.z].find((x) => Math.abs(x) > tolerance);
+            if (sign < 0) direction.negate();
+            const origin = a.clone().addScaledVector(direction, -a.dot(direction));
+            const id = `${key(direction)}|${key(origin)}`;
+            if (!lines.has(id)) lines.set(id, { direction, origin, spans: [] });
+            const line = lines.get(id), start = a.dot(line.direction), end = b.dot(line.direction);
+            line.spans.push({ start: Math.min(start, end), end: Math.max(start, end), normal: polygon.plane.normal });
+          }
+        }
+        const crease = Math.cos(8 * Math.PI / 180);
+        for (const { direction, origin, spans } of lines.values()) {
+          const stops = [...new Set(spans.flatMap((s) => [s.start, s.end]))].sort((a, b) => a - b);
+          for (let i = 1; i < stops.length; i++) {
+            if (stops[i] - stops[i - 1] < tolerance) continue;
+            const middle = (stops[i] + stops[i - 1]) / 2;
+            const faces = spans.filter((s) => s.start < middle && s.end > middle);
+            if (!faces.some((a, j) => faces.slice(j + 1).some((b) => a.normal.dot(b.normal) < crease))) continue;
+            for (const distance of [stops[i - 1], stops[i]]) {
+              const point = origin.clone().addScaledVector(direction, distance);
+              result.push(point.x, point.y, point.z);
+            }
+          }
+        }
+        return result;
+      }
       function polygonsGeometry(n){const t=[],e=[];for(const i of n)for(let r=2;r<i.vertices.length;r+=1)for(const s of [i.vertices[0],i.vertices[r-1],i.vertices[r]]){t.push(s.pos.x,s.pos.y,s.pos.z);e.push(i.plane.normal.x,i.plane.normal.y,i.plane.normal.z);}const i=new Ae();i.setAttribute("position",new ye(t,3));i.setAttribute("normal",new ye(e,3));const r=Yg(i,1e-5);i.dispose();r.computeVertexNormals();r.computeBoundingBox();r.computeBoundingSphere();return r;}
       function loopSolidGeometry(n,t,e,i){
         const r=new Shape2D(n.map((p)=>new Ut(p.x,p.y))),s=Math.abs(i-e),q=new ExtrudeGeo(r,{depth:s,bevelEnabled:!1,steps:1,curveSegments:1}),o=q.index?q.toNonIndexed():q,a=o.getAttribute("position"),c=[];
@@ -2885,19 +2931,45 @@ ${o}
         }
         return i;
       }
-      function multiAxisHolesGeometry(n){
-        const t=[],profiles=[];for(const e of ["front","side","top"]){const i=holeProfileConfig(n,e),r=viewProfileLoops(n[e]);if(!i.bounds)continue;if(r.outer)profiles.push({view:e,loop:r.outer,config:i,score:r.outer.length+10*r.outer.filter((s,o)=>{const a=r.outer[(o+1)%r.outer.length];return Math.abs(a.x-s.x)>1e-6&&Math.abs(a.y-s.y)>1e-6;}).length});for(const s of r.holes)t.push({view:e,loop:s,...holeAxisRange(n,s,i)});}
-        const implicit=hiddenBoundaryHoles(n);t.push(...implicit);
-        if((t.length<2||new Set(t.map((e)=>e.view)).size<2)&&!implicit.length)return null;
-        profiles.sort((e,i)=>i.score-e.score);const e=profiles[0];if(!e)return null;
-        const i=loopSolidGeometry(e.loop,e.view,e.config.bounds.minY,e.config.bounds.maxY);let c=geometryPolygons(i);i.dispose();
-        for(const l of t){const h=loopSolidGeometry(l.loop,l.view,l.start,l.end);c=subtractPolygons(c,geometryPolygons(h));h.dispose();}
-        const l=polygonsGeometry(c),h=[],d=(...p)=>h.push(...p),f=(p,b,v)=>p==="front"?new O(v.x-ce.x/2,ce.z-v.y,ce.y/2-b):p==="side"?new O(b-ce.x/2,ce.z-v.y,ce.y/2-v.x):new O(v.x-ce.x/2,ce.z-b,ce.y/2-v.y);
-        for(const b of [e.config.bounds.minY,e.config.bounds.maxY])for(let v=0;v<e.loop.length;v+=1){const y=f(e.view,b,e.loop[v]),x=f(e.view,b,e.loop[(v+1)%e.loop.length]);d(y.x,y.y,y.z,x.x,x.y,x.z);}
-        for(const b of e.loop){const v=f(e.view,e.config.bounds.minY,b),y=f(e.view,e.config.bounds.maxY,b);d(v.x,v.y,v.z,y.x,y.y,y.z);}
-        for(const p of t)for(const b of [p.start,...(p.through?[p.end]:[])])for(let v=0;v<p.loop.length;v+=1){const y=f(p.view,b,p.loop[v]),x=f(p.view,b,p.loop[(v+1)%p.loop.length]);d(y.x,y.y,y.z,x.x,x.y,x.z);}
-        l.userData.modelKind="multi-axis-holes";l.userData.featureEdges=h;return{geometry:l,stats:{vertices:l.attributes.position.count,faces:(l.index?.count??l.attributes.position.count)/3}};
+      function multiAxisHolesGeometry(views) {
+        const holes = [], profiles = [];
+        for (const view of ["front", "side", "top"]) {
+          const config = holeProfileConfig(views, view);
+          const profile = viewProfileLoops(views[view]);
+          if (!config.bounds) continue;
+          if (profile.outer) profiles.push({ view, loop: profile.outer, config });
+          for (const loop of profile.holes)
+            holes.push({ view, loop, ...holeAxisRange(views, loop, config) });
+        }
+        holes.push(...hiddenBoundaryHoles(views));
+        if (!holes.length || profiles.length !== 3) return null;
+        // Start with the simplest profile to limit intermediate BSP splits.
+        profiles.sort((a, b) => a.loop.length - b.loop.length);
+        const first = profiles[0];
+        const base = loopSolidGeometry(first.loop, first.view,
+          first.config.bounds.minY, first.config.bounds.maxY);
+        let polygons = geometryPolygons(base);
+        base.dispose();
+        // Every silhouette constrains the solid, even when another view has
+        // more corners. Extruding only that view loses steps and shoulders.
+        for (const profile of profiles.slice(1)) {
+          const solid = loopSolidGeometry(profile.loop, profile.view,
+            profile.config.bounds.minY, profile.config.bounds.maxY);
+          polygons = intersectPolygons(polygons, geometryPolygons(solid));
+          solid.dispose();
+        }
+        for (const hole of holes) {
+          const cutter = loopSolidGeometry(hole.loop, hole.view, hole.start, hole.end);
+          polygons = subtractPolygons(polygons, geometryPolygons(cutter));
+          cutter.dispose();
+        }
+        const geometry = polygonsGeometry(polygons);
+        geometry.userData.modelKind = "multi-axis-holes";
+        geometry.userData.featureEdges = polygonFeatureEdges(polygons);
+        return { geometry, stats: { vertices: geometry.attributes.position.count,
+          faces: (geometry.index?.count ?? geometry.attributes.position.count) / 3 } };
       }
+
       function profileWithHolesGeometry(n) {
         for(const t of ["front","side","top"]) {
           const e=n[t], i=[...e.segments.filter((p)=>p.type==="visible"),...curvesAsSegments((e.ellipses??[]).filter((p)=>p.type==="visible"),96)], r=closedLoops(i);
@@ -3299,12 +3371,12 @@ ${o}
       }
       function Z_(n) {
         return (
-          n
-            .normalize("NFD")
+          n.normalize("NFD")
             .replace(/[\u0300-\u036f]/g, "")
-            .replace(/[^a-zA-Z0-9_-]+/g, "-")
-            .replace(/^-|-$/g, "")
-            .toLowerCase() || "projeto"
+            .replace(/[<>:"/\\|?*\x00-\x1f]/g, "-")
+            .replace(/\s+/g, " ")
+            .trim()
+            .replace(/[. ]+$/g, "") || "Projeto"
         );
       }
       function K_(n) {
